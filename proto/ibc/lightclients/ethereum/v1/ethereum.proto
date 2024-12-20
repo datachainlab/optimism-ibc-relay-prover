@@ -1,0 +1,24 @@
+syntax = "proto3";
+package ibc.lightclients.ethereum.v1;
+option go_package = "github.com/datachainlab/optimism-ibc-relay-prover/module";
+
+message TrustedSyncCommittee {
+}
+
+message ForkParameters {
+}
+
+message Fraction {
+}
+
+message SyncCommittee {
+}
+
+message ConsensusUpdate {
+}
+
+message ExecutionUpdate {
+}
+
+message AccountUpdate {
+}
