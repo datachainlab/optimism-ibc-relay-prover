@@ -1,5 +1,6 @@
 # git clone https://github.com/datachainlab/optimism-elc ../optimism-elc
-IBC_PROTO ?= ../optimism-elc/proto/definitions
+OP_IBC_PROTO ?= ../optimism-elc/proto/definitions
+ETH_IBC_PROTO ?= ../ethereum-ibc-relay-prover/proto
 
 DOCKER := $(shell which docker)
 
@@ -10,7 +11,9 @@ protoImage=$(DOCKER) run --user 0 --rm -v $(CURDIR):/workspace --workdir /worksp
 .PHONY: proto-import
 proto-import:
 	@echo "Importing Protobuf files"
-	@rm -rf ./proto/ibc && cp -a $(IBC_PROTO)/ibc ./proto/
+	@rm -rf ./proto/ibc
+	@cp -a $(OP_IBC_PROTO)/ibc ./proto/
+	@cp -a $(ETH_IBC_PROTO)/ibc ./proto/
 
 .PHONY: proto-gen
 proto-gen:

@@ -8,7 +8,8 @@ import (
 	_ "github.com/cosmos/gogoproto/gogoproto"
 	proto "github.com/cosmos/gogoproto/proto"
 	github_com_cosmos_gogoproto_types "github.com/cosmos/gogoproto/types"
-	types "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
+	types1 "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
+	types "github.com/datachainlab/ethereum-ibc-relay-prover/light-clients/ethereum/types"
 	_ "google.golang.org/protobuf/types/known/durationpb"
 	io "io"
 	math "math"
@@ -29,14 +30,14 @@ var _ = time.Kitchen
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
 type L1Config struct {
-	GenesisValidatorsRoot        []byte          `protobuf:"bytes,1,opt,name=genesis_validators_root,json=genesisValidatorsRoot,proto3" json:"genesis_validators_root,omitempty"`
-	MinSyncCommitteeParticipants uint64          `protobuf:"varint,2,opt,name=min_sync_committee_participants,json=minSyncCommitteeParticipants,proto3" json:"min_sync_committee_participants,omitempty"`
-	GenesisTime                  uint64          `protobuf:"varint,3,opt,name=genesis_time,json=genesisTime,proto3" json:"genesis_time,omitempty"`
-	ForkParameters               *ForkParameters `protobuf:"bytes,4,opt,name=fork_parameters,json=forkParameters,proto3" json:"fork_parameters,omitempty"`
-	SecondsPerSlot               uint64          `protobuf:"varint,5,opt,name=seconds_per_slot,json=secondsPerSlot,proto3" json:"seconds_per_slot,omitempty"`
-	SlotsPerEpoch                uint64          `protobuf:"varint,6,opt,name=slots_per_epoch,json=slotsPerEpoch,proto3" json:"slots_per_epoch,omitempty"`
-	EpochsPerSyncCommitteePeriod uint64          `protobuf:"varint,7,opt,name=epochs_per_sync_committee_period,json=epochsPerSyncCommitteePeriod,proto3" json:"epochs_per_sync_committee_period,omitempty"`
-	TrustLevel                   *Fraction       `protobuf:"bytes,8,opt,name=trust_level,json=trustLevel,proto3" json:"trust_level,omitempty"`
+	GenesisValidatorsRoot        []byte                `protobuf:"bytes,1,opt,name=genesis_validators_root,json=genesisValidatorsRoot,proto3" json:"genesis_validators_root,omitempty"`
+	MinSyncCommitteeParticipants uint64                `protobuf:"varint,2,opt,name=min_sync_committee_participants,json=minSyncCommitteeParticipants,proto3" json:"min_sync_committee_participants,omitempty"`
+	GenesisTime                  uint64                `protobuf:"varint,3,opt,name=genesis_time,json=genesisTime,proto3" json:"genesis_time,omitempty"`
+	ForkParameters               *types.ForkParameters `protobuf:"bytes,4,opt,name=fork_parameters,json=forkParameters,proto3" json:"fork_parameters,omitempty"`
+	SecondsPerSlot               uint64                `protobuf:"varint,5,opt,name=seconds_per_slot,json=secondsPerSlot,proto3" json:"seconds_per_slot,omitempty"`
+	SlotsPerEpoch                uint64                `protobuf:"varint,6,opt,name=slots_per_epoch,json=slotsPerEpoch,proto3" json:"slots_per_epoch,omitempty"`
+	EpochsPerSyncCommitteePeriod uint64                `protobuf:"varint,7,opt,name=epochs_per_sync_committee_period,json=epochsPerSyncCommitteePeriod,proto3" json:"epochs_per_sync_committee_period,omitempty"`
+	TrustLevel                   *types.Fraction       `protobuf:"bytes,8,opt,name=trust_level,json=trustLevel,proto3" json:"trust_level,omitempty"`
 }
 
 func (m *L1Config) Reset()         { *m = L1Config{} }
@@ -73,15 +74,15 @@ func (m *L1Config) XXX_DiscardUnknown() {
 var xxx_messageInfo_L1Config proto.InternalMessageInfo
 
 type ClientState struct {
-	ChainId            uint64        `protobuf:"varint,1,opt,name=chain_id,json=chainId,proto3" json:"chain_id,omitempty"`
-	IbcStoreAddress    []byte        `protobuf:"bytes,2,opt,name=ibc_store_address,json=ibcStoreAddress,proto3" json:"ibc_store_address,omitempty"`
-	IbcCommitmentsSlot []byte        `protobuf:"bytes,3,opt,name=ibc_commitments_slot,json=ibcCommitmentsSlot,proto3" json:"ibc_commitments_slot,omitempty"`
-	LatestHeight       *types.Height `protobuf:"bytes,4,opt,name=latest_height,json=latestHeight,proto3" json:"latest_height,omitempty"`
-	TrustingPeriod     time.Duration `protobuf:"bytes,5,opt,name=trusting_period,json=trustingPeriod,proto3,stdduration" json:"trusting_period"`
-	MaxClockDrift      time.Duration `protobuf:"bytes,6,opt,name=max_clock_drift,json=maxClockDrift,proto3,stdduration" json:"max_clock_drift"`
-	Frozen             bool          `protobuf:"varint,7,opt,name=frozen,proto3" json:"frozen,omitempty"`
-	RollupConfigJson   []byte        `protobuf:"bytes,8,opt,name=rollup_config_json,json=rollupConfigJson,proto3" json:"rollup_config_json,omitempty"`
-	L1Config           *L1Config     `protobuf:"bytes,9,opt,name=l1_config,json=l1Config,proto3" json:"l1_config,omitempty"`
+	ChainId            uint64         `protobuf:"varint,1,opt,name=chain_id,json=chainId,proto3" json:"chain_id,omitempty"`
+	IbcStoreAddress    []byte         `protobuf:"bytes,2,opt,name=ibc_store_address,json=ibcStoreAddress,proto3" json:"ibc_store_address,omitempty"`
+	IbcCommitmentsSlot []byte         `protobuf:"bytes,3,opt,name=ibc_commitments_slot,json=ibcCommitmentsSlot,proto3" json:"ibc_commitments_slot,omitempty"`
+	LatestHeight       *types1.Height `protobuf:"bytes,4,opt,name=latest_height,json=latestHeight,proto3" json:"latest_height,omitempty"`
+	TrustingPeriod     time.Duration  `protobuf:"bytes,5,opt,name=trusting_period,json=trustingPeriod,proto3,stdduration" json:"trusting_period"`
+	MaxClockDrift      time.Duration  `protobuf:"bytes,6,opt,name=max_clock_drift,json=maxClockDrift,proto3,stdduration" json:"max_clock_drift"`
+	Frozen             bool           `protobuf:"varint,7,opt,name=frozen,proto3" json:"frozen,omitempty"`
+	RollupConfigJson   []byte         `protobuf:"bytes,8,opt,name=rollup_config_json,json=rollupConfigJson,proto3" json:"rollup_config_json,omitempty"`
+	L1Config           *L1Config      `protobuf:"bytes,9,opt,name=l1_config,json=l1Config,proto3" json:"l1_config,omitempty"`
 }
 
 func (m *ClientState) Reset()         { *m = ClientState{} }
@@ -118,9 +119,9 @@ func (m *ClientState) XXX_DiscardUnknown() {
 var xxx_messageInfo_ClientState proto.InternalMessageInfo
 
 type L1Header struct {
-	TrustedSyncCommittee *TrustedSyncCommittee `protobuf:"bytes,1,opt,name=trusted_sync_committee,json=trustedSyncCommittee,proto3" json:"trusted_sync_committee,omitempty"`
-	ConsensusUpdate      *ConsensusUpdate      `protobuf:"bytes,2,opt,name=consensus_update,json=consensusUpdate,proto3" json:"consensus_update,omitempty"`
-	ExecutionUpdate      *ExecutionUpdate      `protobuf:"bytes,3,opt,name=execution_update,json=executionUpdate,proto3" json:"execution_update,omitempty"`
+	TrustedSyncCommittee *types.TrustedSyncCommittee `protobuf:"bytes,1,opt,name=trusted_sync_committee,json=trustedSyncCommittee,proto3" json:"trusted_sync_committee,omitempty"`
+	ConsensusUpdate      *types.ConsensusUpdate      `protobuf:"bytes,2,opt,name=consensus_update,json=consensusUpdate,proto3" json:"consensus_update,omitempty"`
+	ExecutionUpdate      *types.ExecutionUpdate      `protobuf:"bytes,3,opt,name=execution_update,json=executionUpdate,proto3" json:"execution_update,omitempty"`
 }
 
 func (m *L1Header) Reset()         { *m = L1Header{} }
@@ -198,11 +199,11 @@ func (m *Derivation) XXX_DiscardUnknown() {
 var xxx_messageInfo_Derivation proto.InternalMessageInfo
 
 type Header struct {
-	TrustedHeight *types.Height  `protobuf:"bytes,1,opt,name=trusted_height,json=trustedHeight,proto3" json:"trusted_height,omitempty"`
-	AccountUpdate *AccountUpdate `protobuf:"bytes,2,opt,name=account_update,json=accountUpdate,proto3" json:"account_update,omitempty"`
-	L1Head        *L1Header      `protobuf:"bytes,3,opt,name=l1_head,json=l1Head,proto3" json:"l1_head,omitempty"`
-	Derivations   []*Derivation  `protobuf:"bytes,4,rep,name=derivations,proto3" json:"derivations,omitempty"`
-	Preimages     []byte         `protobuf:"bytes,5,opt,name=preimages,proto3" json:"preimages,omitempty"`
+	TrustedHeight *types1.Height       `protobuf:"bytes,1,opt,name=trusted_height,json=trustedHeight,proto3" json:"trusted_height,omitempty"`
+	AccountUpdate *types.AccountUpdate `protobuf:"bytes,2,opt,name=account_update,json=accountUpdate,proto3" json:"account_update,omitempty"`
+	L1Head        *L1Header            `protobuf:"bytes,3,opt,name=l1_head,json=l1Head,proto3" json:"l1_head,omitempty"`
+	Derivations   []*Derivation        `protobuf:"bytes,4,rep,name=derivations,proto3" json:"derivations,omitempty"`
+	Preimages     []byte               `protobuf:"bytes,5,opt,name=preimages,proto3" json:"preimages,omitempty"`
 }
 
 func (m *Header) Reset()         { *m = Header{} }
@@ -1267,7 +1268,7 @@ func (m *L1Config) Unmarshal(dAtA []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			if m.ForkParameters == nil {
-				m.ForkParameters = &ForkParameters{}
+				m.ForkParameters = &types.ForkParameters{}
 			}
 			if err := m.ForkParameters.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
@@ -1360,7 +1361,7 @@ func (m *L1Config) Unmarshal(dAtA []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			if m.TrustLevel == nil {
-				m.TrustLevel = &Fraction{}
+				m.TrustLevel = &types.Fraction{}
 			}
 			if err := m.TrustLevel.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
@@ -1533,7 +1534,7 @@ func (m *ClientState) Unmarshal(dAtA []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			if m.LatestHeight == nil {
-				m.LatestHeight = &types.Height{}
+				m.LatestHeight = &types1.Height{}
 			}
 			if err := m.LatestHeight.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
@@ -1775,7 +1776,7 @@ func (m *L1Header) Unmarshal(dAtA []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			if m.TrustedSyncCommittee == nil {
-				m.TrustedSyncCommittee = &TrustedSyncCommittee{}
+				m.TrustedSyncCommittee = &types.TrustedSyncCommittee{}
 			}
 			if err := m.TrustedSyncCommittee.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
@@ -1811,7 +1812,7 @@ func (m *L1Header) Unmarshal(dAtA []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			if m.ConsensusUpdate == nil {
-				m.ConsensusUpdate = &ConsensusUpdate{}
+				m.ConsensusUpdate = &types.ConsensusUpdate{}
 			}
 			if err := m.ConsensusUpdate.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
@@ -1847,7 +1848,7 @@ func (m *L1Header) Unmarshal(dAtA []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			if m.ExecutionUpdate == nil {
-				m.ExecutionUpdate = &ExecutionUpdate{}
+				m.ExecutionUpdate = &types.ExecutionUpdate{}
 			}
 			if err := m.ExecutionUpdate.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
@@ -2138,7 +2139,7 @@ func (m *Header) Unmarshal(dAtA []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			if m.TrustedHeight == nil {
-				m.TrustedHeight = &types.Height{}
+				m.TrustedHeight = &types1.Height{}
 			}
 			if err := m.TrustedHeight.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
@@ -2174,7 +2175,7 @@ func (m *Header) Unmarshal(dAtA []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			if m.AccountUpdate == nil {
-				m.AccountUpdate = &AccountUpdate{}
+				m.AccountUpdate = &types.AccountUpdate{}
 			}
 			if err := m.AccountUpdate.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
