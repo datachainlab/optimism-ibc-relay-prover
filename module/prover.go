@@ -46,8 +46,40 @@ func (pr *Prover) GetLatestFinalizedHeader() (latestFinalizedHeader core.Header,
 }
 
 func (pr *Prover) SetupHeadersForUpdate(counterparty core.FinalityAwareChain, latestFinalizedHeader core.Header) ([]core.Header, error) {
-	//TODO implement me
-	panic("implement me")
+	header := latestFinalizedHeader.(*Header)
+	// LCP doesn't need height / EVM needs latest height
+	latestHeightOnDstChain, err := counterparty.LatestHeight()
+	if err != nil {
+		return nil, err
+	}
+	csRes, err := counterparty.QueryClientState(core.NewQueryContext(context.TODO(), latestHeightOnDstChain))
+	if err != nil {
+		return nil, fmt.Errorf("no client state found : SetupHeadersForUpdate: height = %d, %+v", latestHeightOnDstChain.GetRevisionHeight(), err)
+	}
+	var cs ibcexported.ClientState
+	if err = pr.l2Client.Codec().UnpackAny(csRes.ClientState, &cs); err != nil {
+		return nil, err
+	}
+
+	// Add derivations from latest finalized to trusted height
+	ctx := context.Background()
+	trustedHeight := cs.GetLatestHeight()
+	last := header.Derivations[len(header.Derivations)-1]
+	lastAgreedNumber := last.L2BlockNumber - 1
+	derivations, err := pr.l2Client.SetupDerivations(ctx, trustedHeight.GetRevisionHeight(), lastAgreedNumber)
+	if err != nil {
+		return nil, err
+	}
+	// Create preimage data for all derivations
+	preimages, err := pr.l2Client.CreatePreimages(ctx, derivations)
+	if err != nil {
+		return nil, err
+	}
+	header.Derivations = derivations
+	header.Preimages = preimages
+
+	//TODO for l1 update header
+	return []core.Header{header}, nil
 }
 
 func (pr *Prover) CheckRefreshRequired(counterparty core.ChainInfoICS02Querier) (bool, error) {
@@ -107,8 +139,7 @@ func (pr *Prover) ProveState(ctx core.QueryContext, path string, value []byte) (
 }
 
 func (pr *Prover) ProveHostConsensusState(ctx core.QueryContext, height ibcexported.Height, consensusState ibcexported.ConsensusState) (proof []byte, err error) {
-	//TODO implement me
-	panic("implement me")
+	return clienttypes.MarshalConsensusState(pr.codec, consensusState)
 }
 
 func (pr *Prover) GetLogger() *log.RelayLogger {
