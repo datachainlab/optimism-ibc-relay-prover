@@ -66,24 +66,40 @@ func (pr *Prover) Init(homePath string, timeout time.Duration, codec codec.Proto
 // These states will be submitted to the counterparty chain as MsgCreateClient.
 // If `height` is nil, the latest finalized height is selected automatically.
 func (pr *Prover) CreateInitialLightClientState(height ibcexported.Height) (ibcexported.ClientState, ibcexported.ConsensusState, error) {
-	l1Ref, derivation, err := pr.l2Client.LatestDerivation(context.Background())
+	ctx := context.Background()
+	l1Ref, derivation, err := pr.l2Client.LatestDerivation(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	rollupConfig, err := pr.l2Client.RollupConfigBytes(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	chainID, err := pr.l2Client.ChainID(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
 
+	accountUpdate, err := pr.l2Client.BuildAccountUpdate(derivation.L2BlockNumber)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	latestHeight := types.NewHeight(0, derivation.L2BlockNumber)
 	clientState := &ClientState{
-		ChainId:            0,
-		IbcStoreAddress:    nil,
-		IbcCommitmentsSlot: nil,
-		LatestHeight:       nil,
-		TrustingPeriod:     0,
-		MaxClockDrift:      0,
+		ChainId:            chainID.Uint64(),
+		IbcStoreAddress:    pr.chain.Config().IBCAddress().Bytes(),
+		IbcCommitmentsSlot: IBCCommitmentsSlot[:],
+		LatestHeight:       &latestHeight,
+		TrustingPeriod:     pr.config.TrustingPeriod,
+		MaxClockDrift:      pr.config.MaxClockDrift,
 		Frozen:             false,
-		RollupConfigJson:   nil,
-		L1Config:           nil,
+		RollupConfigJson:   rollupConfig,
+		// TODO
+		L1Config: nil,
 	}
 	consensusState := &ConsensusState{
-		StorageRoot: nil,
+		StorageRoot: accountUpdate.AccountStorageRoot,
 		Timestamp:   0,
 		OutputRoot:  derivation.L2OutputRoot,
 		Hash:        derivation.L2HeadHash,
@@ -97,7 +113,7 @@ func (pr *Prover) CreateInitialLightClientState(height ibcexported.Height) (ibce
 
 func NewProver(chain *ethereum.Chain, config ProverConfig) *Prover {
 	beaconClient := beacon.NewClient(config.L1BeaconEndpoint)
-	l2Client, err := NewL2Client(context.Background(), &config)
+	l2Client, err := NewL2Client(context.Background(), &config, chain)
 	if err != nil {
 		//TODO avoid dial
 		panic(err)

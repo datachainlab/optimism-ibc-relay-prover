@@ -6,22 +6,27 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/cockroachdb/errors"
+	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/relay/ethereum"
+	lctypes "github.com/datachainlab/ethereum-ibc-relay-prover/light-clients/ethereum/types"
 	"github.com/ethereum-optimism/optimism/op-service/client"
 	"github.com/ethereum-optimism/optimism/op-service/dial"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum-optimism/optimism/op-service/sources"
+	"github.com/ethereum/go-ethereum/crypto"
 	log2 "github.com/ethereum/go-ethereum/log"
 	"github.com/hyperledger-labs/yui-relayer/log"
 	"io"
+	"math/big"
 	"net/http"
 )
 
 type L2Client struct {
 	rollupClient dial.RollupClientInterface
 	config       *ProverConfig
+	chain        *ethereum.Chain
 }
 
-func NewL2Client(ctx context.Context, config *ProverConfig) (*L2Client, error) {
+func NewL2Client(ctx context.Context, config *ProverConfig, chain *ethereum.Chain) (*L2Client, error) {
 	logger := log2.NewLogger(log.GetLogger().Logger.Handler())
 	rpc, err := client.NewRPC(ctx, logger, config.OpNodeEndpoint)
 	if err != nil {
@@ -30,6 +35,7 @@ func NewL2Client(ctx context.Context, config *ProverConfig) (*L2Client, error) {
 	return &L2Client{
 		rollupClient: sources.NewRollupClient(rpc),
 		config:       config,
+		chain:        chain,
 	}, nil
 }
 
@@ -111,4 +117,58 @@ func (c *L2Client) CreatePreimages(ctx context.Context, derivations []*Derivatio
 		return nil, errors.WithStack(err)
 	}
 	return preimageData, nil
+}
+
+func (c *L2Client) RollupConfigBytes(ctx context.Context) ([]byte, error) {
+	config, err := c.rollupClient.RollupConfig(ctx)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	return json.Marshal(config)
+}
+
+func (c *L2Client) ChainID(ctx context.Context) (*big.Int, error) {
+	chainID, err := c.chain.Client().ChainID(ctx)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	return chainID, err
+}
+
+func (c *L2Client) BuildAccountUpdate(blockNumber uint64) (*lctypes.AccountUpdate, error) {
+	proof, err := c.chain.Client().GetProof(
+		c.chain.Config().IBCAddress(),
+		nil,
+		big.NewInt(int64(blockNumber)),
+	)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	return &lctypes.AccountUpdate{
+		AccountProof:       proof.AccountProofRLP,
+		AccountStorageRoot: proof.StorageHash[:],
+	}, nil
+}
+
+func (c *L2Client) BuildStateProof(path []byte, height int64) ([]byte, error) {
+	// calculate slot for commitment
+	storageKey := crypto.Keccak256Hash(append(
+		crypto.Keccak256Hash(path).Bytes(),
+		IBCCommitmentsSlot.Bytes()...,
+	))
+	storageKeyHex, err := storageKey.MarshalText()
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+
+	// call eth_getProof
+	stateProof, err := c.chain.Client().GetProof(
+		c.chain.Config().IBCAddress(),
+		[][]byte{storageKeyHex},
+		big.NewInt(height),
+	)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	return stateProof.StorageProofRLP[0], nil
 }
