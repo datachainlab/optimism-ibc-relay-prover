@@ -5,7 +5,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
 	ibcexported "github.com/cosmos/ibc-go/v8/modules/core/exported"
-	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/client"
 	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/relay/ethereum"
 	"github.com/datachainlab/ethereum-ibc-relay-prover/beacon"
 	"github.com/ethereum/go-ethereum/common"
@@ -17,12 +16,11 @@ import (
 var IBCCommitmentsSlot = common.HexToHash("1ee222554989dda120e26ecacf756fe1235cd8d726706b57517715dde4f0c900")
 
 type Prover struct {
-	chain           *ethereum.Chain
-	config          ProverConfig
-	executionClient *client.ETHClient
-	beaconClient    beacon.Client
-	l2Client        *L2Client
-	codec           codec.ProtoCodecMarshaler
+	chain        *ethereum.Chain
+	config       ProverConfig
+	beaconClient beacon.Client
+	l2Client     *L2Client
+	codec        codec.ProtoCodecMarshaler
 }
 
 func (pr *Prover) GetLatestFinalizedHeader() (latestFinalizedHeader core.Header, err error) {
@@ -67,7 +65,7 @@ func (pr *Prover) Init(homePath string, timeout time.Duration, codec codec.Proto
 // If `height` is nil, the latest finalized height is selected automatically.
 func (pr *Prover) CreateInitialLightClientState(height ibcexported.Height) (ibcexported.ClientState, ibcexported.ConsensusState, error) {
 	ctx := context.Background()
-	l1Ref, derivation, err := pr.l2Client.LatestDerivation(ctx)
+	_, derivation, err := pr.l2Client.LatestDerivation(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -84,8 +82,13 @@ func (pr *Prover) CreateInitialLightClientState(height ibcexported.Height) (ibce
 	if err != nil {
 		return nil, nil, err
 	}
+	timestamp, err := pr.l2Client.TimestampAt(ctx, derivation.L2BlockNumber)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	latestHeight := types.NewHeight(0, derivation.L2BlockNumber)
+
 	clientState := &ClientState{
 		ChainId:            chainID.Uint64(),
 		IbcStoreAddress:    pr.chain.Config().IBCAddress().Bytes(),
@@ -100,7 +103,7 @@ func (pr *Prover) CreateInitialLightClientState(height ibcexported.Height) (ibce
 	}
 	consensusState := &ConsensusState{
 		StorageRoot: accountUpdate.AccountStorageRoot,
-		Timestamp:   0,
+		Timestamp:   timestamp,
 		OutputRoot:  derivation.L2OutputRoot,
 		Hash:        derivation.L2HeadHash,
 		//TODO

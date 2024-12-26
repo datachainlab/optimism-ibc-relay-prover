@@ -135,6 +135,14 @@ func (c *L2Client) ChainID(ctx context.Context) (*big.Int, error) {
 	return chainID, err
 }
 
+func (c *L2Client) TimestampAt(ctx context.Context, number uint64) (uint64, error) {
+	header, err := c.chain.Client().HeaderByNumber(ctx, big.NewInt(0).SetUint64(number))
+	if err != nil {
+		return 0, errors.WithStack(err)
+	}
+	return header.Time, nil
+}
+
 func (c *L2Client) BuildAccountUpdate(blockNumber uint64) (*lctypes.AccountUpdate, error) {
 	proof, err := c.chain.Client().GetProof(
 		c.chain.Config().IBCAddress(),
