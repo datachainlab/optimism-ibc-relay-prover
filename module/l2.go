@@ -95,7 +95,7 @@ func (c *L2Client) SetupDerivations(ctx context.Context, trustedHeight uint64, l
 // It marshals the derivations into JSON, sends a POST request to the preimage maker endpoint, and reads the response.
 func (c *L2Client) CreatePreimages(ctx context.Context, derivations []*Derivation) ([]byte, error) {
 	httpClient := http.Client{
-		Timeout: c.config.PreimageMakerTimeout
+		Timeout: c.config.PreimageMakerTimeout,
 	}
 	body, err := json.Marshal(derivations)
 	if err != nil {

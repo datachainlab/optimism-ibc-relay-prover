@@ -10,9 +10,11 @@ type Module struct{}
 
 var _ config.ModuleI = (*Module)(nil)
 
+const ModuleName = "optimism-light-client"
+
 // Name returns the name of the module
 func (Module) Name() string {
-	return "optimism-light-client"
+	return ModuleName
 }
 
 // RegisterInterfaces register the module interfaces to protobuf Any.
