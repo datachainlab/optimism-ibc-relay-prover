@@ -2,11 +2,12 @@ package module
 
 import (
 	"context"
+	"fmt"
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
 	ibcexported "github.com/cosmos/ibc-go/v8/modules/core/exported"
 	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/relay/ethereum"
-	"github.com/datachainlab/ethereum-ibc-relay-prover/beacon"
+	types2 "github.com/datachainlab/ethereum-ibc-relay-prover/light-clients/ethereum/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/hyperledger-labs/yui-relayer/core"
 	"github.com/hyperledger-labs/yui-relayer/log"
@@ -16,16 +17,31 @@ import (
 var IBCCommitmentsSlot = common.HexToHash("1ee222554989dda120e26ecacf756fe1235cd8d726706b57517715dde4f0c900")
 
 type Prover struct {
-	chain        *ethereum.Chain
-	config       ProverConfig
-	beaconClient beacon.Client
-	l2Client     *L2Client
-	codec        codec.ProtoCodecMarshaler
+	config   ProverConfig
+	l2Client *L2Client
+	codec    codec.ProtoCodecMarshaler
 }
 
 func (pr *Prover) GetLatestFinalizedHeader() (latestFinalizedHeader core.Header, err error) {
-	//TODO implement me
-	panic("implement me")
+	l1Ref, derivation, err := pr.l2Client.LatestDerivation(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	accountUpdate, err := pr.l2Client.BuildAccountUpdate(l1Ref.Number)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build account update: %v", err)
+	}
+	header := &Header{
+		AccountUpdate: accountUpdate,
+		L1Head: &L1Header{
+			// TODO
+			TrustedSyncCommittee: nil,
+			ConsensusUpdate:      nil,
+			ExecutionUpdate:      nil,
+		},
+		Derivations: []*Derivation{derivation},
+	}
+	return header, nil
 }
 
 func (pr *Prover) SetupHeadersForUpdate(counterparty core.FinalityAwareChain, latestFinalizedHeader core.Header) ([]core.Header, error) {
@@ -34,8 +50,52 @@ func (pr *Prover) SetupHeadersForUpdate(counterparty core.FinalityAwareChain, la
 }
 
 func (pr *Prover) CheckRefreshRequired(counterparty core.ChainInfoICS02Querier) (bool, error) {
-	//TODO implement me
-	panic("implement me")
+	cpQueryHeight, err := counterparty.LatestHeight()
+	if err != nil {
+		return false, fmt.Errorf("failed to get the latest height of the counterparty chain: %v", err)
+	}
+	cpQueryCtx := core.NewQueryContext(context.TODO(), cpQueryHeight)
+
+	resCs, err := counterparty.QueryClientState(cpQueryCtx)
+	if err != nil {
+		return false, fmt.Errorf("failed to query the client state on the counterparty chain: %v", err)
+	}
+
+	var cs ibcexported.ClientState
+	if err := pr.codec.UnpackAny(resCs.ClientState, &cs); err != nil {
+		return false, fmt.Errorf("failed to unpack Any into tendermint client state: %v", err)
+	}
+
+	resCons, err := counterparty.QueryClientConsensusState(cpQueryCtx, cs.GetLatestHeight())
+	if err != nil {
+		return false, fmt.Errorf("failed to query the consensus state on the counterparty chain: %v", err)
+	}
+
+	var cons ibcexported.ConsensusState
+	if err := pr.codec.UnpackAny(resCons.ConsensusState, &cons); err != nil {
+		return false, fmt.Errorf("failed to unpack Any into tendermint consensus state: %v", err)
+	}
+	lcLastTimestamp := time.Unix(0, int64(cons.GetTimestamp()))
+
+	selfQueryHeight, err := pr.l2Client.LatestFinalizedHeight()
+	if err != nil {
+		return false, fmt.Errorf("failed to get the latest height of the self chain: %v", err)
+	}
+
+	selfTimestamp, err := pr.l2Client.Timestamp(selfQueryHeight)
+	if err != nil {
+		return false, fmt.Errorf("failed to get timestamp of the self chain: %v", err)
+	}
+
+	elapsedTime := selfTimestamp.Sub(lcLastTimestamp)
+
+	durationMulByFraction := func(d time.Duration, f *types2.Fraction) time.Duration {
+		nsec := d.Nanoseconds() * int64(f.Numerator) / int64(f.Denominator)
+		return time.Duration(nsec) * time.Nanosecond
+	}
+	needsRefresh := elapsedTime > durationMulByFraction(pr.config.GetTrustingPeriod(), pr.config.RefreshThresholdRate)
+
+	return needsRefresh, nil
 }
 
 func (pr *Prover) ProveState(ctx core.QueryContext, path string, value []byte) (proof []byte, proofHeight types.Height, err error) {
@@ -49,7 +109,7 @@ func (pr *Prover) ProveHostConsensusState(ctx core.QueryContext, height ibcexpor
 }
 
 func (pr *Prover) GetLogger() *log.RelayLogger {
-	return log.GetLogger().WithChain(pr.chain.ChainID()).WithModule(ModuleName)
+	return log.GetLogger().WithChain(pr.l2Client.ChainID()).WithModule(ModuleName)
 }
 
 var _ core.Prover = (*Prover)(nil)
@@ -73,7 +133,7 @@ func (pr *Prover) CreateInitialLightClientState(height ibcexported.Height) (ibce
 	if err != nil {
 		return nil, nil, err
 	}
-	chainID, err := pr.l2Client.ChainID(ctx)
+	chainID, err := pr.l2Client.Client().ChainID(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -91,7 +151,7 @@ func (pr *Prover) CreateInitialLightClientState(height ibcexported.Height) (ibce
 
 	clientState := &ClientState{
 		ChainId:            chainID.Uint64(),
-		IbcStoreAddress:    pr.chain.Config().IBCAddress().Bytes(),
+		IbcStoreAddress:    pr.l2Client.Config().IBCAddress().Bytes(),
 		IbcCommitmentsSlot: IBCCommitmentsSlot[:],
 		LatestHeight:       &latestHeight,
 		TrustingPeriod:     pr.config.TrustingPeriod,
@@ -115,11 +175,10 @@ func (pr *Prover) CreateInitialLightClientState(height ibcexported.Height) (ibce
 }
 
 func NewProver(chain *ethereum.Chain, config ProverConfig) *Prover {
-	beaconClient := beacon.NewClient(config.L1BeaconEndpoint)
 	l2Client, err := NewL2Client(context.Background(), &config, chain)
 	if err != nil {
 		//TODO avoid dial
 		panic(err)
 	}
-	return &Prover{chain: chain, config: config, executionClient: chain.Client(), beaconClient: beaconClient, l2Client: l2Client}
+	return &Prover{config: config, l2Client: l2Client}
 }

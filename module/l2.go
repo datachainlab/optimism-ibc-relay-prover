@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/cockroachdb/errors"
+	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
+	ibcexported "github.com/cosmos/ibc-go/v8/modules/core/exported"
 	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/relay/ethereum"
 	lctypes "github.com/datachainlab/ethereum-ibc-relay-prover/light-clients/ethereum/types"
 	"github.com/ethereum-optimism/optimism/op-service/client"
@@ -23,7 +25,7 @@ import (
 type L2Client struct {
 	rollupClient dial.RollupClientInterface
 	config       *ProverConfig
-	chain        *ethereum.Chain
+	*ethereum.Chain
 }
 
 func NewL2Client(ctx context.Context, config *ProverConfig, chain *ethereum.Chain) (*L2Client, error) {
@@ -35,8 +37,17 @@ func NewL2Client(ctx context.Context, config *ProverConfig, chain *ethereum.Chai
 	return &L2Client{
 		rollupClient: sources.NewRollupClient(rpc),
 		config:       config,
-		chain:        chain,
+		Chain:        chain,
 	}, nil
+}
+
+func (c *L2Client) LatestFinalizedHeight() (ibcexported.Height, error) {
+	syncStatus, err := c.rollupClient.SyncStatus(context.Background())
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	finalizedHeight := syncStatus.FinalizedL2.Number
+	return clienttypes.NewHeight(0, finalizedHeight), nil
 }
 
 // LatestDerivation retrieves the latest derivation information from the rollup client.
@@ -127,16 +138,8 @@ func (c *L2Client) RollupConfigBytes(ctx context.Context) ([]byte, error) {
 	return json.Marshal(config)
 }
 
-func (c *L2Client) ChainID(ctx context.Context) (*big.Int, error) {
-	chainID, err := c.chain.Client().ChainID(ctx)
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
-	return chainID, err
-}
-
 func (c *L2Client) TimestampAt(ctx context.Context, number uint64) (uint64, error) {
-	header, err := c.chain.Client().HeaderByNumber(ctx, big.NewInt(0).SetUint64(number))
+	header, err := c.Chain.Client().HeaderByNumber(ctx, big.NewInt(0).SetUint64(number))
 	if err != nil {
 		return 0, errors.WithStack(err)
 	}
@@ -144,8 +147,8 @@ func (c *L2Client) TimestampAt(ctx context.Context, number uint64) (uint64, erro
 }
 
 func (c *L2Client) BuildAccountUpdate(blockNumber uint64) (*lctypes.AccountUpdate, error) {
-	proof, err := c.chain.Client().GetProof(
-		c.chain.Config().IBCAddress(),
+	proof, err := c.Chain.Client().GetProof(
+		c.Chain.Config().IBCAddress(),
 		nil,
 		big.NewInt(int64(blockNumber)),
 	)
@@ -170,8 +173,8 @@ func (c *L2Client) BuildStateProof(path []byte, height int64) ([]byte, error) {
 	}
 
 	// call eth_getProof
-	stateProof, err := c.chain.Client().GetProof(
-		c.chain.Config().IBCAddress(),
+	stateProof, err := c.Chain.Client().GetProof(
+		c.Chain.Config().IBCAddress(),
 		[][]byte{storageKeyHex},
 		big.NewInt(height),
 	)
