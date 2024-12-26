@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
+	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
 	ibcexported "github.com/cosmos/ibc-go/v8/modules/core/exported"
 	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/relay/ethereum"
 	types2 "github.com/datachainlab/ethereum-ibc-relay-prover/light-clients/ethereum/types"
@@ -98,9 +99,11 @@ func (pr *Prover) CheckRefreshRequired(counterparty core.ChainInfoICS02Querier) 
 	return needsRefresh, nil
 }
 
-func (pr *Prover) ProveState(ctx core.QueryContext, path string, value []byte) (proof []byte, proofHeight types.Height, err error) {
-	//TODO implement me
-	panic("implement me")
+func (pr *Prover) ProveState(ctx core.QueryContext, path string, value []byte) ([]byte, types.Height, error) {
+	proofHeight := ctx.Height().GetRevisionHeight()
+	height := pr.newHeight(proofHeight)
+	proof, err := pr.l2Client.BuildStateProof([]byte(path), proofHeight)
+	return proof, height, err
 }
 
 func (pr *Prover) ProveHostConsensusState(ctx core.QueryContext, height ibcexported.Height, consensusState ibcexported.ConsensusState) (proof []byte, err error) {
@@ -147,7 +150,7 @@ func (pr *Prover) CreateInitialLightClientState(height ibcexported.Height) (ibce
 		return nil, nil, err
 	}
 
-	latestHeight := types.NewHeight(0, derivation.L2BlockNumber)
+	latestHeight := pr.newHeight(derivation.L2BlockNumber)
 
 	clientState := &ClientState{
 		ChainId:            chainID.Uint64(),
@@ -172,6 +175,10 @@ func (pr *Prover) CreateInitialLightClientState(height ibcexported.Height) (ibce
 		L1NextSyncCommittee:    nil,
 	}
 	return clientState, consensusState, nil
+}
+
+func (pr *Prover) newHeight(blockNumber uint64) clienttypes.Height {
+	return clienttypes.NewHeight(0, blockNumber)
 }
 
 func NewProver(chain *ethereum.Chain, config ProverConfig) *Prover {

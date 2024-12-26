@@ -161,7 +161,7 @@ func (c *L2Client) BuildAccountUpdate(blockNumber uint64) (*lctypes.AccountUpdat
 	}, nil
 }
 
-func (c *L2Client) BuildStateProof(path []byte, height int64) ([]byte, error) {
+func (c *L2Client) BuildStateProof(path []byte, height uint64) ([]byte, error) {
 	// calculate slot for commitment
 	storageKey := crypto.Keccak256Hash(append(
 		crypto.Keccak256Hash(path).Bytes(),
@@ -176,7 +176,7 @@ func (c *L2Client) BuildStateProof(path []byte, height int64) ([]byte, error) {
 	stateProof, err := c.Chain.Client().GetProof(
 		c.Chain.Config().IBCAddress(),
 		[][]byte{storageKeyHex},
-		big.NewInt(height),
+		big.NewInt(0).SetUint64(height),
 	)
 	if err != nil {
 		return nil, errors.WithStack(err)
