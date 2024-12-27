@@ -1,6 +1,6 @@
 # git clone https://github.com/datachainlab/optimism-elc ../optimism-elc
 OP_IBC_PROTO ?= ../optimism-elc/proto/definitions
-ETH_IBC_PROTO ?= ../ethereum-ibc-relay-prover/proto
+ETH_IBC_PROTO ?= $$GOPATH/pkg/mod/github.com/datachainlab/ethereum-ibc-relay-prover@v0.3.6/proto
 
 DOCKER := $(shell which docker)
 
@@ -13,7 +13,8 @@ proto-import:
 	@echo "Importing Protobuf files"
 	@rm -rf ./proto/ibc
 	@cp -a $(OP_IBC_PROTO)/ibc ./proto/
-	@cp -a $(ETH_IBC_PROTO)/ibc ./proto/
+	@cp -a $(ETH_IBC_PROTO)/ibc/lightclients/ethereum ./proto/ibc/lightclients/
+	@chmod -R 755 ./proto/ibc/lightclients/ethereum
 
 .PHONY: proto-gen
 proto-gen:
