@@ -2,14 +2,15 @@ package l1
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"github.com/cockroachdb/errors"
 	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
-	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/relay/ethereum"
 	"github.com/datachainlab/ethereum-ibc-relay-prover/beacon"
 	lctypes "github.com/datachainlab/ethereum-ibc-relay-prover/light-clients/ethereum/types"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module"
-	"time"
+	"github.com/ethereum/go-ethereum/ethclient"
+	"math/big"
 )
 
 type InitialState struct {
@@ -21,22 +22,36 @@ type InitialState struct {
 }
 
 type L1Client struct {
-	beaconClient beacon.Client
-	*ethereum.Chain
-	config *ProverConfig
+	beaconClient    beacon.Client
+	executionClient *ethclient.Client
+	config          *ProverConfig
+}
+
+func (pr *L1Client) BuildL1Config(state *InitialState) (*module.L1Config, error) {
+	return &module.L1Config{
+		GenesisValidatorsRoot:        state.Genesis.GenesisValidatorsRoot[:],
+		MinSyncCommitteeParticipants: 1,
+		GenesisTime:                  state.Genesis.GenesisTimeSeconds,
+		ForkParameters:               pr.config.getForkParameters(),
+		SecondsPerSlot:               pr.secondsPerSlot(),
+		SlotsPerEpoch:                pr.slotsPerEpoch(),
+		EpochsPerSyncCommitteePeriod: pr.epochsPerSyncCommitteePeriod(),
+		TrustLevel: &lctypes.Fraction{
+			Numerator:   2,
+			Denominator: 3,
+		},
+	}, nil
 }
 
 func (pr *L1Client) BuildInitialState(blockNumber uint64) (*InitialState, error) {
 
-	timestamp, err := pr.Timestamp(pr.newHeight(blockNumber))
+	header, err := pr.executionClient.HeaderByNumber(context.Background(), big.NewInt(int64(blockNumber)))
 	if err != nil {
-		return nil, fmt.Errorf("failed to get timestamp: %v", err)
+		return nil, errors.WithStack(err)
 	}
-	if truncatedTm := timestamp.Truncate(time.Second); truncatedTm != timestamp {
-		return nil, fmt.Errorf("ethereum timestamp must be truncated to seconds: timestamp=%v truncated_timestamp=%v", timestamp, truncatedTm)
-	}
+	timestamp := header.Time
 
-	slot, err := pr.getSlotAtTimestamp(uint64(timestamp.Unix()))
+	slot, err := pr.getSlotAtTimestamp(timestamp)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute slot at timestamp: %v", err)
 	}
@@ -119,4 +134,33 @@ func (pr *L1Client) buildNextSyncCommitteeUpdate(period uint64, trustedHeight cl
 
 func (pr *L1Client) newHeight(blockNumber uint64) clienttypes.Height {
 	return clienttypes.NewHeight(0, blockNumber)
+}
+
+func NewL1Client(ctx context.Context, config *module.ProverConfig) (*L1Client, error) {
+	beaconClient := beacon.NewClient(config.L1BeaconEndpoint)
+	executionClient, err := ethclient.DialContext(ctx, config.L1ExecutionEndpoint)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	chainID, err := executionClient.ChainID(ctx)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+
+	network := Minimal
+	if chainID.Uint64() == 1 {
+		network = Mainnet
+	} else if chainID.Uint64() == 5 {
+		network = Goerli
+	} else if chainID.Uint64() == 11155111 {
+		network = Sepolia
+	}
+
+	return &L1Client{
+		beaconClient:    beaconClient,
+		executionClient: executionClient,
+		config: &ProverConfig{
+			Network: network,
+		},
+	}, nil
 }

@@ -9,6 +9,7 @@ import (
 	ibcexported "github.com/cosmos/ibc-go/v8/modules/core/exported"
 	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/relay/ethereum"
 	types2 "github.com/datachainlab/ethereum-ibc-relay-prover/light-clients/ethereum/types"
+	"github.com/datachainlab/optimism-ibc-relay-prover/module/l1"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/hyperledger-labs/yui-relayer/core"
 	"github.com/hyperledger-labs/yui-relayer/log"
@@ -20,6 +21,7 @@ var IBCCommitmentsSlot = common.HexToHash("1ee222554989dda120e26ecacf756fe1235cd
 type Prover struct {
 	config   ProverConfig
 	l2Client *L2Client
+	l1Client *l1.L1Client
 	codec    codec.ProtoCodecMarshaler
 }
 
@@ -215,8 +217,15 @@ func (pr *Prover) newHeight(blockNumber uint64) clienttypes.Height {
 func NewProver(chain *ethereum.Chain, config ProverConfig) *Prover {
 	l2Client, err := NewL2Client(context.Background(), &config, chain)
 	if err != nil {
-		//TODO avoid dial
 		panic(err)
 	}
-	return &Prover{config: config, l2Client: l2Client}
+	l1Client, err := l1.NewL1Client(context.Background(), &config)
+	if err != nil {
+		panic(err)
+	}
+	return &Prover{
+		config:   config,
+		l2Client: l2Client,
+		l1Client: l1Client,
+	}
 }
