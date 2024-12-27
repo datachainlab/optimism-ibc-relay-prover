@@ -32,17 +32,16 @@ func (pr *Prover) GetLatestFinalizedHeader() (latestFinalizedHeader core.Header,
 	}
 	accountUpdate, err := pr.l2Client.BuildAccountUpdate(l1Ref.Number)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build account update: %v", err)
+		return nil, err
+	}
+	l1Head, err := pr.l1Client.BuildConsensusUpdateAt(l1Ref.Number)
+	if err != nil {
+		return nil, err
 	}
 	header := &Header{
 		AccountUpdate: accountUpdate,
-		L1Head: &L1Header{
-			// TODO
-			TrustedSyncCommittee: nil,
-			ConsensusUpdate:      nil,
-			ExecutionUpdate:      nil,
-		},
-		Derivations: []*Derivation{derivation},
+		L1Head:        l1Head,
+		Derivations:   []*Derivation{derivation},
 	}
 	return header, nil
 }
@@ -80,7 +79,28 @@ func (pr *Prover) SetupHeadersForUpdate(counterparty core.FinalityAwareChain, la
 	header.Derivations = derivations
 	header.Preimages = preimages
 
-	//TODO for l1 update header
+	// Set L1 trusted sync committee
+	consStateRes, err := counterparty.QueryClientConsensusState(core.NewQueryContext(ctx, latestHeightOnDstChain), cs.GetLatestHeight())
+	var consState ConsensusState
+	if err = pr.l2Client.Codec().UnpackAny(consStateRes.ConsensusState, &consState); err != nil {
+		return nil, err
+	}
+	isNext, trustedSyncCommittee, err := pr.l1Client.GetSyncCommitteeBySlot(ctx, consState.L1Slot, header.L1Head.ConsensusUpdate.SignatureSlot)
+	if err != nil {
+		return nil, err
+	}
+	header.L1Head.TrustedSyncCommittee = &types2.TrustedSyncCommittee{
+		SyncCommittee: trustedSyncCommittee,
+		IsNext:        isNext,
+	}
+	pr.GetLogger().Info("SetupHeadersForUpdate",
+		"l2", last.L2BlockNumber,
+		"l1", header.L1Head.ExecutionUpdate.BlockNumber,
+		"l1-slot", header.L1Head.ConsensusUpdate.FinalizedHeader.Slot,
+		"trusted-l2", trustedHeight.GetRevisionHeight(),
+		"trusted-l1-slot", consState.L1Slot,
+		"l1-sync-committee-next", isNext)
+	//TODO Fill l1 histories from cons slot to latest finalized slot so as to recover from long down of relayer
 	return []core.Header{header}, nil
 }
 

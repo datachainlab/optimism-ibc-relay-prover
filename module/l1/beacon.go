@@ -1,6 +1,7 @@
 package l1
 
 import (
+	"context"
 	"fmt"
 	"github.com/datachainlab/ethereum-ibc-relay-prover/beacon"
 	lctypes "github.com/datachainlab/ethereum-ibc-relay-prover/light-clients/ethereum/types"
@@ -83,11 +84,11 @@ func (pr *L1Client) getSlotAtTimestamp(timestamp uint64) (uint64, error) {
 
 // returns a period corresponding to a given execution block number
 func (pr *L1Client) getPeriodWithBlockNumber(blockNumber uint64) (uint64, error) {
-	timestamp, err := pr.Chain.Timestamp(pr.newHeight(blockNumber))
+	timestamp, err := pr.timestampAt(context.Background(), blockNumber)
 	if err != nil {
 		return 0, err
 	}
-	slot, err := pr.getSlotAtTimestamp(uint64(timestamp.Unix()))
+	slot, err := pr.getSlotAtTimestamp(timestamp)
 	if err != nil {
 		return 0, err
 	}

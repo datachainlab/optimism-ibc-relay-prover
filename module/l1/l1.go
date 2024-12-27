@@ -43,34 +43,67 @@ func (pr *L1Client) BuildL1Config(state *InitialState) (*module.L1Config, error)
 	}, nil
 }
 
-func (pr *L1Client) BuildInitialState(blockNumber uint64) (*InitialState, error) {
-
-	header, err := pr.executionClient.HeaderByNumber(context.Background(), big.NewInt(int64(blockNumber)))
+func (pr *L1Client) BuildConsensusUpdateAt(blockNumber uint64) (*module.L1Header, error) {
+	timestamp, err := pr.timestampAt(context.Background(), blockNumber)
 	if err != nil {
-		return nil, errors.WithStack(err)
+		return nil, err
 	}
-	timestamp := header.Time
-
 	slot, err := pr.getSlotAtTimestamp(timestamp)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute slot at timestamp: %v", err)
 	}
+	period := pr.computeSyncCommitteePeriod(pr.computeEpoch(slot))
 
+	res, err := pr.beaconClient.GetLightClientUpdate(period)
+	if err != nil {
+		return nil, err
+	}
+	lcUpdate := res.Data.ToProto()
+	executionHeader := &res.Data.FinalizedHeader.Execution
+	executionUpdate, err := pr.buildExecutionUpdate(executionHeader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build execution update: %v", err)
+	}
+	executionRoot, err := executionHeader.HashTreeRoot()
+	if err != nil {
+		return nil, fmt.Errorf("failed to calculate execution root: %v", err)
+	}
+	if !bytes.Equal(executionRoot[:], lcUpdate.FinalizedExecutionRoot) {
+		return nil, fmt.Errorf("execution root mismatch: %X != %X", executionRoot, lcUpdate.FinalizedExecutionRoot)
+	}
+	return &module.L1Header{
+		ConsensusUpdate: lcUpdate,
+		ExecutionUpdate: executionUpdate,
+	}, nil
+}
+
+func (pr *L1Client) BuildInitialState(blockNumber uint64) (*InitialState, error) {
+
+	timestamp, err := pr.timestampAt(context.Background(), blockNumber)
+	if err != nil {
+		return nil, err
+	}
+	slot, err := pr.getSlotAtTimestamp(timestamp)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute slot at timestamp: %v", err)
+	}
 	period := pr.computeSyncCommitteePeriod(pr.computeEpoch(slot))
 
 	currentSyncCommittee, err := pr.getBootstrapInPeriod(period)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get bootstrap in period %v: %v", period, err)
 	}
-	genesis, err := pr.beaconClient.GetGenesis()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get genesis: %v", err)
-	}
 	res2, err := pr.beaconClient.GetLightClientUpdate(period)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get LightClientUpdate: period=%v %v", period, err)
 	}
 	nextSyncCommittee := res2.Data.ToProto().NextSyncCommittee
+
+	genesis, err := pr.beaconClient.GetGenesis()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get genesis: %v", err)
+	}
+
 	return &InitialState{
 		Genesis:              *genesis,
 		Slot:                 slot,
@@ -79,6 +112,39 @@ func (pr *L1Client) BuildInitialState(blockNumber uint64) (*InitialState, error)
 		NextSyncCommittee:    *nextSyncCommittee,
 	}, nil
 }
+
+func (pr *L1Client) GetSyncCommitteeBySlot(ctx context.Context, slot uint64, signatureSlot uint64) (bool, *lctypes.SyncCommittee, error) {
+	statePeriod := pr.computeSyncCommitteePeriod(pr.computeEpoch(slot))
+	latestPeriod := pr.computeSyncCommitteePeriod(pr.computeEpoch(signatureSlot))
+	res, err := pr.beaconClient.GetLightClientUpdate(statePeriod)
+	if err != nil {
+		return false, nil, errors.WithStack(err)
+	}
+	if statePeriod == latestPeriod {
+		root, err := res.Data.FinalizedHeader.Beacon.HashTreeRoot()
+		if err != nil {
+			return false, nil, errors.WithStack(err)
+		}
+		bootstrapRes, err := pr.beaconClient.GetBootstrap(root[:])
+		if err != nil {
+			return false, nil, errors.WithStack(err)
+		}
+		return false, bootstrapRes.Data.CurrentSyncCommittee.ToProto(), nil
+	} else {
+		return true, res.Data.NextSyncCommittee.ToProto(), nil
+	}
+
+}
+
+func (pr *L1Client) timestampAt(ctx context.Context, number uint64) (uint64, error) {
+	header, err := pr.executionClient.HeaderByNumber(ctx, big.NewInt(0).SetUint64(number))
+	if err != nil {
+		return 0, errors.WithStack(err)
+	}
+	return header.Time, nil
+}
+
+// see ethereum-ibc-relay-prover/realy/prover.go
 
 func (pr *L1Client) getBootstrapInPeriod(period uint64) (*lctypes.SyncCommittee, error) {
 	slotsPerEpoch := pr.slotsPerEpoch()
