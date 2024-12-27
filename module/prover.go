@@ -161,7 +161,7 @@ func (pr *Prover) Init(homePath string, timeout time.Duration, codec codec.Proto
 // If `height` is nil, the latest finalized height is selected automatically.
 func (pr *Prover) CreateInitialLightClientState(height ibcexported.Height) (ibcexported.ClientState, ibcexported.ConsensusState, error) {
 	ctx := context.Background()
-	_, derivation, err := pr.l2Client.LatestDerivation(ctx)
+	l1Ref, derivation, err := pr.l2Client.LatestDerivation(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -185,6 +185,16 @@ func (pr *Prover) CreateInitialLightClientState(height ibcexported.Height) (ibce
 
 	latestHeight := pr.newHeight(derivation.L2BlockNumber)
 
+	l1InitialState, err := pr.l1Client.BuildInitialState(l1Ref.Number)
+	if err != nil {
+		return nil, nil, err
+	}
+	l1Config, err := pr.l1Client.BuildL1Config(l1InitialState)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	pr.GetLogger().Info("CreateInitialLightClientState", "l1", l1Ref.Number, "l2", derivation.L2BlockNumber)
 	clientState := &ClientState{
 		ChainId:            chainID.Uint64(),
 		IbcStoreAddress:    pr.l2Client.Config().IBCAddress().Bytes(),
@@ -194,18 +204,16 @@ func (pr *Prover) CreateInitialLightClientState(height ibcexported.Height) (ibce
 		MaxClockDrift:      pr.config.MaxClockDrift,
 		Frozen:             false,
 		RollupConfigJson:   rollupConfig,
-		// TODO
-		L1Config: nil,
+		L1Config:           l1Config,
 	}
 	consensusState := &ConsensusState{
-		StorageRoot: accountUpdate.AccountStorageRoot,
-		Timestamp:   timestamp,
-		OutputRoot:  derivation.L2OutputRoot,
-		Hash:        derivation.L2HeadHash,
-		//TODO
-		L1Slot:                 0,
-		L1CurrentSyncCommittee: nil,
-		L1NextSyncCommittee:    nil,
+		StorageRoot:            accountUpdate.AccountStorageRoot,
+		Timestamp:              timestamp,
+		OutputRoot:             derivation.L2OutputRoot,
+		Hash:                   derivation.L2HeadHash,
+		L1Slot:                 l1InitialState.Slot,
+		L1CurrentSyncCommittee: l1InitialState.CurrentSyncCommittee.AggregatePubkey,
+		L1NextSyncCommittee:    l1InitialState.NextSyncCommittee.AggregatePubkey,
 	}
 	return clientState, consensusState, nil
 }
