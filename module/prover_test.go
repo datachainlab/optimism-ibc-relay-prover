@@ -24,7 +24,10 @@ func TestProverTestSuite(t *testing.T) {
 }
 
 func (ts *ProverTestSuite) SetupTest() {
-	addressHex, err := os.ReadFile("tests/contracts/addresses/OwnableIBCHandler")
+	err := log.InitLogger("DEBUG", "text", "stdout")
+	ts.Require().NoError(err)
+
+	addressHex, err := os.ReadFile("../tests/contracts/addresses/OwnableIBCHandler")
 	ts.Require().NoError(err)
 
 	signerConfig := &hd.SignerConfig{
@@ -34,7 +37,7 @@ func (ts *ProverTestSuite) SetupTest() {
 	anySignerConfig, err := codectypes.NewAnyWithValue(signerConfig)
 	ts.Require().NoError(err)
 	l2Chain, err := ethereum.NewChain(ethereum.ChainConfig{
-		EthChainId: 901,
+		RpcAddr:    "http://localhost:9545",
 		IbcAddress: string(addressHex),
 		Signer:     anySignerConfig,
 	})
@@ -42,9 +45,6 @@ func (ts *ProverTestSuite) SetupTest() {
 	codec := core.MakeCodec()
 
 	err = l2Chain.Init("", 0, codec, false)
-	ts.Require().NoError(err)
-
-	err = log.InitLogger("DEBUG", "text", "stdout")
 	ts.Require().NoError(err)
 
 	err = l2Chain.SetRelayInfo(&core.PathEnd{

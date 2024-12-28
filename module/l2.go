@@ -10,39 +10,26 @@ import (
 	ibcexported "github.com/cosmos/ibc-go/v8/modules/core/exported"
 	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/relay/ethereum"
 	lctypes "github.com/datachainlab/ethereum-ibc-relay-prover/light-clients/ethereum/types"
-	"github.com/ethereum-optimism/optimism/op-service/client"
-	"github.com/ethereum-optimism/optimism/op-service/dial"
-	"github.com/ethereum-optimism/optimism/op-service/eth"
-	"github.com/ethereum-optimism/optimism/op-service/sources"
 	"github.com/ethereum/go-ethereum/crypto"
-	log2 "github.com/ethereum/go-ethereum/log"
-	"github.com/hyperledger-labs/yui-relayer/log"
 	"io"
 	"math/big"
 	"net/http"
 )
 
 type L2Client struct {
-	rollupClient dial.RollupClientInterface
-	config       *ProverConfig
+	config *ProverConfig
 	*ethereum.Chain
 }
 
-func NewL2Client(ctx context.Context, config *ProverConfig, chain *ethereum.Chain) (*L2Client, error) {
-	logger := log2.NewLogger(log.GetLogger().Logger.Handler())
-	rpc, err := client.NewRPC(ctx, logger, config.OpNodeEndpoint)
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
+func NewL2Client(config *ProverConfig, chain *ethereum.Chain) *L2Client {
 	return &L2Client{
-		rollupClient: sources.NewRollupClient(rpc),
-		config:       config,
-		Chain:        chain,
-	}, nil
+		config: config,
+		Chain:  chain,
+	}
 }
 
 func (c *L2Client) LatestFinalizedHeight() (ibcexported.Height, error) {
-	syncStatus, err := c.rollupClient.SyncStatus(context.Background())
+	syncStatus, err := c.SyncStatus()
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
@@ -52,8 +39,8 @@ func (c *L2Client) LatestFinalizedHeight() (ibcexported.Height, error) {
 
 // LatestDerivation retrieves the latest derivation information from the rollup client.
 // It fetches the sync status, claimed output, and agreed output for the latest blocks.
-func (c *L2Client) LatestDerivation(ctx context.Context) (*eth.L1BlockRef, *Derivation, error) {
-	syncStatus, err := c.rollupClient.SyncStatus(ctx)
+func (c *L2Client) LatestDerivation(ctx context.Context) (*L1BlockRef, *Derivation, error) {
+	syncStatus, err := c.SyncStatus()
 	if err != nil {
 		return nil, nil, errors.WithStack(err)
 	}
@@ -62,11 +49,11 @@ func (c *L2Client) LatestDerivation(ctx context.Context) (*eth.L1BlockRef, *Deri
 	claimedNumber := claimed.Number
 	agreedNumber := claimedNumber - 1
 
-	claimedOutput, err := c.rollupClient.OutputAtBlock(ctx, claimedNumber)
+	claimedOutput, err := c.OutputAtBlock(claimedNumber)
 	if err != nil {
 		return nil, nil, errors.WithStack(err)
 	}
-	agreedOutput, err := c.rollupClient.OutputAtBlock(ctx, agreedNumber)
+	agreedOutput, err := c.OutputAtBlock(agreedNumber)
 	if err != nil {
 		return nil, nil, errors.WithStack(err)
 	}
@@ -88,12 +75,12 @@ func (c *L2Client) SetupDerivations(ctx context.Context, trustedHeight uint64, l
 	derivations := make([]*Derivation, 0)
 	for i := trustedHeight; i < latestAgreedNumber; i++ {
 		agreedNumber := trustedHeight
-		agreedOutput, err := c.rollupClient.OutputAtBlock(ctx, agreedNumber)
+		agreedOutput, err := c.OutputAtBlock(agreedNumber)
 		if err != nil {
 			return nil, errors.WithStack(err)
 		}
 		claimedNumber := agreedNumber + 1
-		claimedOutput, err := c.rollupClient.OutputAtBlock(ctx, claimedNumber)
+		claimedOutput, err := c.OutputAtBlock(claimedNumber)
 		if err != nil {
 			return nil, errors.WithStack(err)
 		}
@@ -128,14 +115,6 @@ func (c *L2Client) CreatePreimages(ctx context.Context, derivations []*Derivatio
 		return nil, errors.WithStack(err)
 	}
 	return preimageData, nil
-}
-
-func (c *L2Client) RollupConfigBytes(ctx context.Context) ([]byte, error) {
-	config, err := c.rollupClient.RollupConfig(ctx)
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
-	return json.Marshal(config)
 }
 
 func (c *L2Client) TimestampAt(ctx context.Context, number uint64) (uint64, error) {

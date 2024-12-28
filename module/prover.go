@@ -184,7 +184,7 @@ func (pr *Prover) CreateInitialLightClientState(height ibcexported.Height) (ibce
 	if err != nil {
 		return nil, nil, err
 	}
-	rollupConfig, err := pr.l2Client.RollupConfigBytes(ctx)
+	rollupConfig, err := pr.l2Client.RollupConfigBytes()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -242,10 +242,7 @@ func (pr *Prover) newHeight(blockNumber uint64) clienttypes.Height {
 }
 
 func NewProver(chain *ethereum.Chain, config ProverConfig) *Prover {
-	l2Client, err := NewL2Client(context.Background(), &config, chain)
-	if err != nil {
-		panic(err)
-	}
+	l2Client := NewL2Client(&config, chain)
 	l1Client, err := NewL1Client(context.Background(), &config)
 	if err != nil {
 		panic(err)
