@@ -24,3 +24,7 @@ go.work.sum
 # env file
 .env
 proto/ibc/lightclients/ethereum
+tests/contracts/addresses
+tests/contracts/artifacts
+tests/contracts/cache
+**/node_modules
