@@ -1,4 +1,4 @@
-package l1
+package module
 
 import (
 	"fmt"
@@ -42,11 +42,11 @@ var (
 	}
 )
 
-type ProverConfig struct {
+type L1ProverConfig struct {
 	Network string
 }
 
-func (prc *ProverConfig) IsMainnetPreset() bool {
+func (prc *L1ProverConfig) IsMainnetPreset() bool {
 	switch prc.Network {
 	case Mainnet, Goerli, Sepolia:
 		return true
@@ -57,7 +57,7 @@ func (prc *ProverConfig) IsMainnetPreset() bool {
 	}
 }
 
-func (prc *ProverConfig) getForkParameters() *lctypes.ForkParameters {
+func (prc *L1ProverConfig) getForkParameters() *lctypes.ForkParameters {
 	switch prc.Network {
 	case Mainnet:
 		return &lctypes.ForkParameters{

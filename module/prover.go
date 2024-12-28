@@ -9,7 +9,6 @@ import (
 	ibcexported "github.com/cosmos/ibc-go/v8/modules/core/exported"
 	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/relay/ethereum"
 	types2 "github.com/datachainlab/ethereum-ibc-relay-prover/light-clients/ethereum/types"
-	"github.com/datachainlab/optimism-ibc-relay-prover/module/l1"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/hyperledger-labs/yui-relayer/core"
 	"github.com/hyperledger-labs/yui-relayer/log"
@@ -21,7 +20,7 @@ var IBCCommitmentsSlot = common.HexToHash("1ee222554989dda120e26ecacf756fe1235cd
 type Prover struct {
 	config   ProverConfig
 	l2Client *L2Client
-	l1Client *l1.L1Client
+	l1Client *L1Client
 	codec    codec.ProtoCodecMarshaler
 }
 
@@ -247,7 +246,7 @@ func NewProver(chain *ethereum.Chain, config ProverConfig) *Prover {
 	if err != nil {
 		panic(err)
 	}
-	l1Client, err := l1.NewL1Client(context.Background(), &config)
+	l1Client, err := NewL1Client(context.Background(), &config)
 	if err != nil {
 		panic(err)
 	}

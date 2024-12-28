@@ -1,4 +1,4 @@
-package l1
+package module
 
 import (
 	"bytes"
