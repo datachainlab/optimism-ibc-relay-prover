@@ -29,7 +29,7 @@ func (pr *Prover) GetLatestFinalizedHeader() (latestFinalizedHeader core.Header,
 	if err != nil {
 		return nil, err
 	}
-	accountUpdate, err := pr.l2Client.BuildAccountUpdate(l1Ref.Number)
+	accountUpdate, err := pr.l2Client.BuildAccountUpdate(derivation.L2BlockNumber)
 	if err != nil {
 		return nil, err
 	}
