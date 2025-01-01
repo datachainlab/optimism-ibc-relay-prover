@@ -6,6 +6,7 @@ import (
 	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/relay/ethereum"
 	"github.com/datachainlab/ethereum-ibc-relay-prover/light-clients/ethereum/types"
 	"github.com/datachainlab/ibc-hd-signer/pkg/hd"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/hyperledger-labs/yui-relayer/core"
 	"github.com/hyperledger-labs/yui-relayer/log"
 	"github.com/stretchr/testify/suite"
@@ -38,7 +39,7 @@ func (ts *ProverTestSuite) SetupTest() {
 	ts.Require().NoError(err)
 	l2Chain, err := ethereum.NewChain(ethereum.ChainConfig{
 		RpcAddr:    "http://localhost:9545",
-		IbcAddress: string(addressHex),
+		IbcAddress: common.Bytes2Hex(addressHex),
 		Signer:     anySignerConfig,
 	})
 	ts.Require().NoError(err)
@@ -80,4 +81,14 @@ func (ts *ProverTestSuite) TestCreateInitialLightClientState() {
 	log.GetLogger().Info(fmt.Sprintf("client state: %+v\n", cs))
 	consState := anyConsState.(*ConsensusState)
 	log.GetLogger().Info(fmt.Sprintf("consensus state: %+v\n", consState))
+}
+
+func (ts *ProverTestSuite) TestGetLatestFinalizedHeader() {
+	header, err := ts.prover.GetLatestFinalizedHeader()
+	ts.Require().NoError(err)
+	h := header.(*Header)
+	log.GetLogger().Info(fmt.Sprintf("header : %+v\n", h))
+	ts.Require().True(len(h.Derivations) > 0)
+	ts.Require().True(len(h.L1Head.ConsensusUpdate.NextSyncCommittee.Pubkeys) > 0)
+	ts.Require().True(h.L1Head.ExecutionUpdate.BlockNumber > 0)
 }
