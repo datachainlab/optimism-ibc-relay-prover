@@ -73,8 +73,11 @@ func (ts *ProverTestSuite) SetupTest() {
 }
 
 func (ts *ProverTestSuite) TestCreateInitialLightClientState() {
-	_, anyConsState, err := ts.prover.CreateInitialLightClientState(nil)
+	anyCs, anyConsState, err := ts.prover.CreateInitialLightClientState(nil)
 	ts.Require().NoError(err)
+
+	cs := anyCs.(*ClientState)
+	log.GetLogger().Info(fmt.Sprintf("client state: %+v\n", cs))
 	consState := anyConsState.(*ConsensusState)
-	log.GetLogger().Info(fmt.Sprintf("consensus state: %v", consState))
+	log.GetLogger().Info(fmt.Sprintf("consensus state: %+v\n", consState))
 }

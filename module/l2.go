@@ -45,11 +45,14 @@ func (c *L2Client) LatestDerivation(ctx context.Context) (*L1BlockRef, *Derivati
 		return nil, nil, errors.WithStack(err)
 	}
 
-	claimed := syncStatus.FinalizedL2
-	claimedNumber := claimed.Number
-	agreedNumber := claimedNumber - 1
+	finalized := syncStatus.FinalizedL2
+	targetNumber := finalized.Number
+	if targetNumber == 0 {
+		return nil, nil, errors.New("no finalized block")
+	}
+	agreedNumber := targetNumber - 1
 
-	claimedOutput, err := c.OutputAtBlock(claimedNumber)
+	targetOutput, err := c.OutputAtBlock(targetNumber)
 	if err != nil {
 		return nil, nil, errors.WithStack(err)
 	}
@@ -61,9 +64,9 @@ func (c *L2Client) LatestDerivation(ctx context.Context) (*L1BlockRef, *Derivati
 	return &syncStatus.FinalizedL1, &Derivation{
 		AgreedL2HeadHash:   agreedOutput.BlockRef.Hash.Bytes(),
 		AgreedL2OutputRoot: agreedOutput.OutputRoot[:],
-		L2HeadHash:         claimed.Hash.Bytes(),
-		L2OutputRoot:       claimedOutput.OutputRoot[:],
-		L2BlockNumber:      claimedNumber,
+		L2HeadHash:         finalized.Hash.Bytes(),
+		L2OutputRoot:       targetOutput.OutputRoot[:],
+		L2BlockNumber:      targetNumber,
 	}, nil
 
 }

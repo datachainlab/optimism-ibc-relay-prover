@@ -2,9 +2,14 @@ package module
 
 import (
 	"context"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"github.com/datachainlab/ethereum-ibc-relay-prover/beacon"
 	lctypes "github.com/datachainlab/ethereum-ibc-relay-prover/light-clients/ethereum/types"
+	"github.com/hyperledger-labs/yui-relayer/log"
+	"io/ioutil"
+	"net/http"
 )
 
 const (
@@ -110,4 +115,92 @@ func (pr *L1Client) buildExecutionUpdate(executionHeader *beacon.ExecutionPayloa
 		BlockNumber:       executionHeader.BlockNumber,
 		BlockNumberBranch: blockNumberBranch,
 	}, nil
+}
+
+// To avoid SupportedVersion check due to lighthouse doesn't include version(fork name)
+type BeaconClient struct {
+	endpoint string
+}
+
+func NewBeaconClient(endpoint string) BeaconClient {
+	return BeaconClient{endpoint: endpoint}
+}
+
+func (cl BeaconClient) GetGenesis() (*beacon.Genesis, error) {
+	var res beacon.GenesisResponse
+	if err := cl.get("/eth/v1/beacon/genesis", &res); err != nil {
+		return nil, err
+	}
+	return beacon.ToGenesis(res)
+}
+
+func (cl BeaconClient) GetBlockRoot(slot uint64, allowOptimistic bool) (*beacon.BlockRootResponse, error) {
+	var res beacon.BlockRootResponse
+	if err := cl.get(fmt.Sprintf("/eth/v1/beacon/blocks/%v/root", slot), &res); err != nil {
+		return nil, err
+	}
+	if !allowOptimistic && res.ExecutionOptimistic {
+		return nil, fmt.Errorf("optimistic execution not allowed")
+	}
+	return &res, nil
+}
+
+func (cl BeaconClient) GetFinalityCheckpoints() (*beacon.StateFinalityCheckpoints, error) {
+	var res beacon.StateFinalityCheckpointResponse
+	if err := cl.get("/eth/v1/beacon/states/head/finality_checkpoints", &res); err != nil {
+		return nil, err
+	}
+	return beacon.ToStateFinalityCheckpoints(res)
+}
+
+func (cl BeaconClient) GetBootstrap(finalizedRoot []byte) (*beacon.LightClientBootstrapResponse, error) {
+	if len(finalizedRoot) != 32 {
+		return nil, fmt.Errorf("finalizedRoot length must be 32: actual=%v", finalizedRoot)
+	}
+	var res beacon.LightClientBootstrapResponse
+	if err := cl.get(fmt.Sprintf("/eth/v1/beacon/light_client/bootstrap/0x%v", hex.EncodeToString(finalizedRoot[:])), &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (cl BeaconClient) GetLightClientUpdates(period uint64, count uint64) (beacon.LightClientUpdatesResponse, error) {
+	var res beacon.LightClientUpdatesResponse
+	if err := cl.get(fmt.Sprintf("/eth/v1/beacon/light_client/updates?start_period=%v&count=%v", period, count), &res); err != nil {
+		return nil, err
+	}
+	if len(res) != int(count) {
+		return nil, fmt.Errorf("unexpected response length: expected=%v actual=%v", count, len(res))
+	}
+	return res, nil
+}
+
+func (cl BeaconClient) GetLightClientUpdate(period uint64) (*beacon.LightClientUpdateResponse, error) {
+	res, err := cl.GetLightClientUpdates(period, 1)
+	if err != nil {
+		return nil, err
+	}
+	return &res[0], nil
+}
+
+func (cl BeaconClient) GetLightClientFinalityUpdate() (*beacon.LightClientFinalityUpdateResponse, error) {
+	var res beacon.LightClientFinalityUpdateResponse
+	if err := cl.get("/eth/v1/beacon/light_client/finality_update", &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (cl BeaconClient) get(path string, res any) error {
+	log.GetLogger().Debug("Beacon API request", "endpoint", cl.endpoint+path)
+	r, err := http.Get(cl.endpoint + path)
+	if err != nil {
+		return err
+	}
+	defer r.Body.Close()
+	bz, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(bz, &res)
 }

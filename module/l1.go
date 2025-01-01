@@ -21,7 +21,7 @@ type InitialState struct {
 }
 
 type L1Client struct {
-	beaconClient    beacon.Client
+	beaconClient    BeaconClient
 	executionClient *ethclient.Client
 	config          *L1ProverConfig
 }
@@ -202,7 +202,7 @@ func (pr *L1Client) newHeight(blockNumber uint64) clienttypes.Height {
 }
 
 func NewL1Client(ctx context.Context, config *ProverConfig) (*L1Client, error) {
-	beaconClient := beacon.NewClient(config.L1BeaconEndpoint)
+	beaconClient := NewBeaconClient(config.L1BeaconEndpoint)
 	executionClient, err := ethclient.DialContext(ctx, config.L1ExecutionEndpoint)
 	if err != nil {
 		return nil, errors.WithStack(err)
