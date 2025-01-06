@@ -25,22 +25,22 @@ type Prover struct {
 }
 
 func (pr *Prover) GetLatestFinalizedHeader() (latestFinalizedHeader core.Header, err error) {
-	l1Ref, derivation, err := pr.l2Client.LatestDerivation(context.Background())
+	derivation, err := pr.l2Client.LatestDerivation(context.Background())
 	if err != nil {
 		return nil, err
 	}
-	accountUpdate, err := pr.l2Client.BuildAccountUpdate(derivation.L2BlockNumber)
+	accountUpdate, err := pr.l2Client.BuildAccountUpdate(derivation.L2.L2BlockNumber)
 	if err != nil {
 		return nil, err
 	}
-	l1Head, err := pr.l1Client.BuildConsensusUpdateAt(l1Ref.Number)
+	l1Head, err := pr.l1Client.BuildConsensusUpdateAt(derivation.L1.Number)
 	if err != nil {
 		return nil, err
 	}
 	header := &Header{
 		AccountUpdate: accountUpdate,
 		L1Head:        l1Head,
-		Derivations:   []*Derivation{derivation},
+		Derivations:   []*Derivation{&derivation.L2},
 	}
 	return header, nil
 }
@@ -75,7 +75,9 @@ func (pr *Prover) SetupHeadersForUpdate(counterparty core.FinalityAwareChain, la
 	if err != nil {
 		return nil, err
 	}
-	header.Derivations = derivations
+	for _, derivation := range derivations {
+		header.Derivations = append(header.Derivations, &derivation.L2)
+	}
 	header.Preimages = preimages
 
 	// Set L1 trusted sync committee
@@ -180,7 +182,7 @@ func (pr *Prover) Init(homePath string, timeout time.Duration, codec codec.Proto
 // If `height` is nil, the latest finalized height is selected automatically.
 func (pr *Prover) CreateInitialLightClientState(height ibcexported.Height) (ibcexported.ClientState, ibcexported.ConsensusState, error) {
 	ctx := context.Background()
-	l1Ref, derivation, err := pr.l2Client.LatestDerivation(ctx)
+	derivation, err := pr.l2Client.LatestDerivation(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -193,18 +195,18 @@ func (pr *Prover) CreateInitialLightClientState(height ibcexported.Height) (ibce
 		return nil, nil, err
 	}
 
-	accountUpdate, err := pr.l2Client.BuildAccountUpdate(derivation.L2BlockNumber)
+	accountUpdate, err := pr.l2Client.BuildAccountUpdate(derivation.L2.L2BlockNumber)
 	if err != nil {
 		return nil, nil, err
 	}
-	timestamp, err := pr.l2Client.TimestampAt(ctx, derivation.L2BlockNumber)
+	timestamp, err := pr.l2Client.TimestampAt(ctx, derivation.L2.L2BlockNumber)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	latestHeight := pr.newHeight(derivation.L2BlockNumber)
+	latestHeight := pr.newHeight(derivation.L2.L2BlockNumber)
 
-	l1InitialState, err := pr.l1Client.BuildInitialState(l1Ref.Number)
+	l1InitialState, err := pr.l1Client.BuildInitialState(derivation.L1.Number)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -213,7 +215,7 @@ func (pr *Prover) CreateInitialLightClientState(height ibcexported.Height) (ibce
 		return nil, nil, err
 	}
 
-	pr.GetLogger().Info("CreateInitialLightClientState", "l1", l1Ref.Number, "l2", derivation.L2BlockNumber)
+	pr.GetLogger().Info("CreateInitialLightClientState", "l1", derivation.L1.Number, "l2", derivation.L2.L2BlockNumber)
 	clientState := &ClientState{
 		ChainId:            chainID.Uint64(),
 		IbcStoreAddress:    pr.l2Client.Config().IBCAddress().Bytes(),
@@ -228,8 +230,8 @@ func (pr *Prover) CreateInitialLightClientState(height ibcexported.Height) (ibce
 	consensusState := &ConsensusState{
 		StorageRoot:            accountUpdate.AccountStorageRoot,
 		Timestamp:              timestamp,
-		OutputRoot:             derivation.L2OutputRoot,
-		Hash:                   derivation.L2HeadHash,
+		OutputRoot:             derivation.L2.L2OutputRoot,
+		Hash:                   derivation.L2.L2HeadHash,
 		L1Slot:                 l1InitialState.Slot,
 		L1CurrentSyncCommittee: l1InitialState.CurrentSyncCommittee.AggregatePubkey,
 		L1NextSyncCommittee:    l1InitialState.NextSyncCommittee.AggregatePubkey,
