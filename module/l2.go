@@ -12,6 +12,7 @@ import (
 	lctypes "github.com/datachainlab/ethereum-ibc-relay-prover/light-clients/ethereum/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"io"
 	"math/big"
 	"net/http"
@@ -25,12 +26,18 @@ type L2Derivation struct {
 type L2Client struct {
 	config *ProverConfig
 	*ethereum.Chain
+	l1ExecutionClient *ethclient.Client
 }
 
 func NewL2Client(config *ProverConfig, chain *ethereum.Chain) *L2Client {
+	l1ExecutionClient, err := ethclient.Dial(config.L1ExecutionEndpoint)
+	if err != nil {
+		panic(err)
+	}
 	return &L2Client{
-		config: config,
-		Chain:  chain,
+		config:            config,
+		Chain:             chain,
+		l1ExecutionClient: l1ExecutionClient,
 	}
 }
 
@@ -82,7 +89,7 @@ func (c *L2Client) LatestDerivation(ctx context.Context) (*L2Derivation, error) 
 // SetupDerivations sets up a list of derivations between the trusted height and the latest agreed number.
 // It iterates from the trusted height to the latest agreed number, fetching the agreed and claimed outputs
 // for each block and appending them to the derivations list.
-func (c *L2Client) SetupDerivations(ctx context.Context, trustedHeight uint64, latestAgreedNumber uint64) ([]*L2Derivation, error) {
+func (c *L2Client) SetupDerivations(ctx context.Context, trustedHeight uint64, latestAgreedNumber uint64, latestFinalizedL1Number uint64) ([]*L2Derivation, error) {
 	derivations := make([]*L2Derivation, 0)
 	for i := trustedHeight; i < latestAgreedNumber; i++ {
 		agreedNumber := trustedHeight
@@ -95,8 +102,18 @@ func (c *L2Client) SetupDerivations(ctx context.Context, trustedHeight uint64, l
 		if err != nil {
 			return nil, errors.WithStack(err)
 		}
+		// use threshold number inorder to reduce derivation latency
+		l1Number := min(latestFinalizedL1Number, claimedOutput.BlockRef.L1Origin.Number+c.config.L1L2DistanceThreshold)
+		header, err := c.l1ExecutionClient.HeaderByNumber(ctx, big.NewInt(0).SetUint64(l1Number))
+		if err != nil {
+			return nil, errors.WithStack(err)
+		}
+
 		derivations = append(derivations, &L2Derivation{
-			//TODO l1 info
+			L1: L1BlockRef{
+				Hash:   header.Hash(),
+				Number: l1Number,
+			},
 			L2: Derivation{
 				AgreedL2HeadHash:   agreedOutput.BlockRef.Hash.Bytes(),
 				AgreedL2OutputRoot: agreedOutput.OutputRoot[:],
@@ -134,7 +151,7 @@ func (c *L2Client) CreatePreimages(ctx context.Context, derivations []*L2Derivat
 			L2BlockNumber:      derivation.L2.L2BlockNumber,
 		})
 	}
-	body, err := json.Marshal(derivations)
+	body, err := json.Marshal(rawDerivations)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
@@ -142,6 +159,9 @@ func (c *L2Client) CreatePreimages(ctx context.Context, derivations []*L2Derivat
 	response, err := httpClient.Post(fmt.Sprintf("%s/derivation", c.config.PreimageMakerEndpoint), "application/json", buffer)
 	if err != nil {
 		return nil, errors.WithStack(err)
+	}
+	if response.StatusCode != http.StatusOK {
+		return nil, errors.Errorf("failed to create preimages: status=%d", response.StatusCode)
 	}
 	preimageData, err := io.ReadAll(response.Body)
 	if err != nil {

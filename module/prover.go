@@ -66,7 +66,7 @@ func (pr *Prover) SetupHeadersForUpdate(counterparty core.FinalityAwareChain, la
 	trustedHeight := cs.GetLatestHeight()
 	last := header.Derivations[len(header.Derivations)-1]
 	lastAgreedNumber := last.L2BlockNumber - 1
-	derivations, err := pr.l2Client.SetupDerivations(ctx, trustedHeight.GetRevisionHeight(), lastAgreedNumber)
+	derivations, err := pr.l2Client.SetupDerivations(ctx, trustedHeight.GetRevisionHeight(), lastAgreedNumber, header.L1Head.ExecutionUpdate.BlockNumber)
 	if err != nil {
 		return nil, err
 	}

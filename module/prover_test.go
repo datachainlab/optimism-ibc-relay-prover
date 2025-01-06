@@ -1,6 +1,7 @@
 package module
 
 import (
+	"context"
 	"fmt"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/relay/ethereum"
@@ -69,6 +70,7 @@ func (ts *ProverTestSuite) SetupTest() {
 		L1BeaconEndpoint:      "http://localhost:5052",
 		PreimageMakerEndpoint: "http://localhost:10080",
 		PreimageMakerTimeout:  30 * time.Second,
+		L1L2DistanceThreshold: 100,
 	}
 	ts.prover = NewProver(l2Chain, config)
 }
@@ -91,4 +93,27 @@ func (ts *ProverTestSuite) TestGetLatestFinalizedHeader() {
 	ts.Require().True(len(h.Derivations) > 0)
 	ts.Require().True(len(h.L1Head.ConsensusUpdate.NextSyncCommittee.Pubkeys) > 0)
 	ts.Require().True(h.L1Head.ExecutionUpdate.BlockNumber > 0)
+}
+
+func (ts *ProverTestSuite) TestSetupHeadersForUpdate() {
+	header, err := ts.prover.GetLatestFinalizedHeader()
+	ts.Require().NoError(err)
+	h := header.(*Header)
+
+	last := h.Derivations[len(h.Derivations)-1]
+	lastAgreedNumber := last.L2BlockNumber - 1
+	derivations, err := ts.prover.l2Client.SetupDerivations(context.Background(), lastAgreedNumber-10, lastAgreedNumber, h.L1Head.ExecutionUpdate.BlockNumber)
+	ts.Require().NoError(err)
+	// Create preimage data for all derivations
+	preimages, err := ts.prover.l2Client.CreatePreimages(context.Background(), derivations)
+	ts.Require().NoError(err)
+	println(len(preimages))
+}
+
+type MockChain struct {
+	*ethereum.Chain
+}
+
+func (m *MockChain) GetLatestFinalizedHeader() (latestFinalizedHeader core.Header, err error) {
+	return nil, nil
 }
