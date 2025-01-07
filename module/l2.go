@@ -92,7 +92,7 @@ func (c *L2Client) LatestDerivation(ctx context.Context) (*L2Derivation, error) 
 func (c *L2Client) SetupDerivations(ctx context.Context, trustedHeight uint64, latestAgreedNumber uint64, latestFinalizedL1Number uint64) ([]*L2Derivation, error) {
 	derivations := make([]*L2Derivation, 0)
 	for i := trustedHeight; i < latestAgreedNumber; i++ {
-		agreedNumber := trustedHeight
+		agreedNumber := i
 		agreedOutput, err := c.OutputAtBlock(agreedNumber)
 		if err != nil {
 			return nil, errors.WithStack(err)
