@@ -229,3 +229,27 @@ func NewL1Client(ctx context.Context, config *ProverConfig) (*L1Client, error) {
 		},
 	}, nil
 }
+
+func (pr *L1Client) GetLatestFinalizedL1Header() (*L1Header, error) {
+	res, err := pr.beaconClient.GetLightClientFinalityUpdate()
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	lcUpdate := res.Data.ToProto()
+	executionHeader := &res.Data.FinalizedHeader.Execution
+	executionUpdate, err := pr.buildExecutionUpdate(executionHeader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build execution update: %v", err)
+	}
+	executionRoot, err := executionHeader.HashTreeRoot()
+	if err != nil {
+		return nil, fmt.Errorf("failed to calculate execution root: %v", err)
+	}
+	if !bytes.Equal(executionRoot[:], lcUpdate.FinalizedExecutionRoot) {
+		return nil, fmt.Errorf("execution root mismatch: %X != %X", executionRoot, lcUpdate.FinalizedExecutionRoot)
+	}
+	return &L1Header{
+		ConsensusUpdate: lcUpdate,
+		ExecutionUpdate: executionUpdate,
+	}, nil
+}

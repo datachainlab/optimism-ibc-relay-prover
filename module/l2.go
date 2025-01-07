@@ -103,6 +103,7 @@ func (c *L2Client) SetupDerivations(ctx context.Context, trustedHeight uint64, l
 			return nil, errors.WithStack(err)
 		}
 		// use threshold number inorder to reduce derivation latency
+		// TODO remove or check execution.number by light_client/update
 		l1Number := min(latestFinalizedL1Number, claimedOutput.BlockRef.L1Origin.Number+c.config.L1L2DistanceThreshold)
 		header, err := c.l1ExecutionClient.HeaderByNumber(ctx, big.NewInt(0).SetUint64(l1Number))
 		if err != nil {

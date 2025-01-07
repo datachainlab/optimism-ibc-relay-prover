@@ -30,17 +30,22 @@ func (pr *Prover) GetLatestFinalizedHeader() (latestFinalizedHeader core.Header,
 	if err != nil {
 		return nil, err
 	}
+
+	l1Header, err := pr.l1Client.GetLatestFinalizedL1Header()
+	if err != nil {
+		return nil, err
+	}
+	if derivation.L1.Number > l1Header.ExecutionUpdate.BlockNumber {
+		return nil, errors.Errorf("l1 finalized block is behind l2: l1=%d, l2=%d", l1Header.ExecutionUpdate.BlockNumber, derivation.L1.Number)
+	}
+
 	accountUpdate, err := pr.l2Client.BuildAccountUpdate(derivation.L2.L2BlockNumber)
 	if err != nil {
 		return nil, err
 	}
-	l1Head, err := pr.l1Client.BuildConsensusUpdateAt(derivation.L1.Number)
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
 	header := &Header{
 		AccountUpdate: accountUpdate,
-		L1Head:        l1Head,
+		L1Head:        l1Header,
 		Derivations:   []*Derivation{&derivation.L2},
 	}
 	return header, nil
@@ -70,6 +75,9 @@ func (pr *Prover) SetupHeadersForUpdate(counterparty core.FinalityAwareChain, la
 	derivations, err := pr.l2Client.SetupDerivations(ctx, trustedHeight.GetRevisionHeight(), lastAgreedNumber, header.L1Head.ExecutionUpdate.BlockNumber)
 	if err != nil {
 		return nil, err
+	}
+	for _, derivation := range derivations {
+		pr.GetLogger().Debug("target derivation ", "l2", derivation.L2.L2BlockNumber, "l1", derivation.L1.Number, "finalized_l1", header.L1Head.ExecutionUpdate.BlockNumber)
 	}
 	// Create preimage data for all derivations
 	preimages, err := pr.l2Client.CreatePreimages(ctx, derivations)

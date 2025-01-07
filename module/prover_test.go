@@ -98,7 +98,6 @@ func (ts *ProverTestSuite) TestGetLatestFinalizedHeader() {
 	h := header.(*Header)
 	log.GetLogger().Info(fmt.Sprintf("header : %+v\n", h))
 	ts.Require().True(len(h.Derivations) > 0)
-	ts.Require().True(len(h.L1Head.ConsensusUpdate.NextSyncCommittee.Pubkeys) > 0)
 	ts.Require().True(h.L1Head.ExecutionUpdate.BlockNumber > 0)
 }
 
@@ -139,6 +138,9 @@ func (ts *ProverTestSuite) TestSetupHeadersForUpdate() {
 	headers, err := ts.prover.SetupHeadersForUpdate(chain, header)
 	ts.Require().NoError(err)
 	ts.Require().Len(headers, 1)
+	h = headers[0].(*Header)
+	ts.Require().True(len(h.Preimages) > 0)
+	ts.Require().True(len(h.Derivations) > 0)
 }
 
 type mockChain struct {
