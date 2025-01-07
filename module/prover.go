@@ -36,7 +36,7 @@ func (pr *Prover) GetLatestFinalizedHeader() (latestFinalizedHeader core.Header,
 	}
 	l1Head, err := pr.l1Client.BuildConsensusUpdateAt(derivation.L1.Number)
 	if err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 	header := &Header{
 		AccountUpdate: accountUpdate,
@@ -86,10 +86,11 @@ func (pr *Prover) SetupHeadersForUpdate(counterparty core.FinalityAwareChain, la
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
-	var consState ConsensusState
-	if err = pr.l2Client.Codec().UnpackAny(consStateRes.ConsensusState, &consState); err != nil {
+	var ibcConsState ibcexported.ConsensusState
+	if err = pr.l2Client.Codec().UnpackAny(consStateRes.ConsensusState, &ibcConsState); err != nil {
 		return nil, err
 	}
+	consState := ibcConsState.(*ConsensusState)
 	isNext, trustedSyncCommittee, err := pr.l1Client.GetSyncCommitteeBySlot(ctx, consState.L1Slot, header.L1Head.ConsensusUpdate.SignatureSlot)
 	if err != nil {
 		return nil, err
@@ -257,5 +258,6 @@ func NewProver(chain *ethereum.Chain, config ProverConfig) *Prover {
 		config:   config,
 		l2Client: l2Client,
 		l1Client: l1Client,
+		codec:    chain.Codec(),
 	}
 }

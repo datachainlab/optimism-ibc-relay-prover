@@ -1,6 +1,7 @@
 package module
 
 import (
+	"context"
 	"fmt"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	"github.com/cosmos/gogoproto/proto"
@@ -10,6 +11,7 @@ import (
 	"github.com/datachainlab/ethereum-ibc-relay-prover/light-clients/ethereum/types"
 	"github.com/datachainlab/ibc-hd-signer/pkg/hd"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/hyperledger-labs/yui-relayer/config"
 	"github.com/hyperledger-labs/yui-relayer/core"
 	"github.com/hyperledger-labs/yui-relayer/log"
 	"github.com/stretchr/testify/suite"
@@ -47,7 +49,10 @@ func (ts *ProverTestSuite) SetupTest() {
 	})
 	ts.Require().NoError(err)
 	codec := core.MakeCodec()
-
+	modules := []config.ModuleI{ethereum.Module{}, Module{}, hd.Module{}}
+	for _, m := range modules {
+		m.RegisterInterfaces(codec.InterfaceRegistry())
+	}
 	err = l2Chain.Init("", 0, codec, false)
 	ts.Require().NoError(err)
 
@@ -100,27 +105,47 @@ func (ts *ProverTestSuite) TestGetLatestFinalizedHeader() {
 func (ts *ProverTestSuite) TestSetupHeadersForUpdate() {
 	header, err := ts.prover.GetLatestFinalizedHeader()
 	ts.Require().NoError(err)
+	h := header.(*Header)
 
-	trustedHeight := clienttypes.NewHeight(0, header.GetHeight().GetRevisionHeight()-10)
+	// client state
+	trustedHeight := clienttypes.NewHeight(0, header.GetHeight().GetRevisionHeight()-2)
 	cs := &ClientState{
 		LatestHeight: &trustedHeight,
 	}
 	protoClientState, err := codectypes.NewAnyWithValue(exported.ClientState(cs).(proto.Message))
 	ts.Require().NoError(err)
+
+	// cons state
+	tm, err := ts.prover.l1Client.timestampAt(context.Background(), h.L1Head.ExecutionUpdate.BlockNumber)
+	ts.Require().NoError(err)
+	slot, err := ts.prover.l1Client.getSlotAtTimestamp(tm)
+	ts.Require().NoError(err)
+	consState := &ConsensusState{
+		L1Slot: slot,
+	}
+	protoConsState, err := codectypes.NewAnyWithValue(exported.ConsensusState(consState).(proto.Message))
+	ts.Require().NoError(err)
+
+	// setup headers from trusted to latest
 	chain := &mockChain{
 		Chain: ts.prover.l2Client.Chain,
 		mockClientState: &clienttypes.QueryClientStateResponse{
 			ClientState: protoClientState,
 		},
+		mockConsState: &clienttypes.QueryConsensusStateResponse{
+			ConsensusState: protoConsState,
+		},
 	}
-	_, err = ts.prover.SetupHeadersForUpdate(chain, header)
+	headers, err := ts.prover.SetupHeadersForUpdate(chain, header)
 	ts.Require().NoError(err)
+	ts.Require().Len(headers, 1)
 }
 
 type mockChain struct {
 	*ethereum.Chain
 	mockLatestHeader core.Header
 	mockClientState  *clienttypes.QueryClientStateResponse
+	mockConsState    *clienttypes.QueryConsensusStateResponse
 }
 
 func (m *mockChain) GetLatestFinalizedHeader() (latestFinalizedHeader core.Header, err error) {
@@ -129,4 +154,8 @@ func (m *mockChain) GetLatestFinalizedHeader() (latestFinalizedHeader core.Heade
 
 func (m *mockChain) QueryClientState(ctx core.QueryContext) (*clienttypes.QueryClientStateResponse, error) {
 	return m.mockClientState, nil
+}
+
+func (m *mockChain) QueryClientConsensusState(ctx core.QueryContext, dstClientConsHeight exported.Height) (*clienttypes.QueryConsensusStateResponse, error) {
+	return m.mockConsState, nil
 }

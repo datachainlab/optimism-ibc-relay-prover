@@ -4,6 +4,7 @@ import (
 	"context"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	"github.com/cosmos/cosmos-sdk/crypto/codec"
+	"github.com/cosmos/ibc-go/v8/modules/core/exported"
 	"github.com/hyperledger-labs/yui-relayer/core"
 )
 
@@ -12,6 +13,14 @@ func RegisterInterfaces(registry codectypes.InterfaceRegistry) {
 	registry.RegisterImplementations(
 		(*core.ProverConfig)(nil),
 		&ProverConfig{},
+	)
+	registry.RegisterImplementations(
+		(*exported.ClientState)(nil),
+		&ClientState{},
+	)
+	registry.RegisterImplementations(
+		(*exported.ConsensusState)(nil),
+		&ConsensusState{},
 	)
 	codec.RegisterInterfaces(registry)
 }
