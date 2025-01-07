@@ -1,9 +1,11 @@
 package module
 
 import (
-	"context"
 	"fmt"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+	"github.com/cosmos/gogoproto/proto"
+	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
+	"github.com/cosmos/ibc-go/v8/modules/core/exported"
 	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/relay/ethereum"
 	"github.com/datachainlab/ethereum-ibc-relay-prover/light-clients/ethereum/types"
 	"github.com/datachainlab/ibc-hd-signer/pkg/hd"
@@ -70,7 +72,7 @@ func (ts *ProverTestSuite) SetupTest() {
 		L1BeaconEndpoint:      "http://localhost:5052",
 		PreimageMakerEndpoint: "http://localhost:10080",
 		PreimageMakerTimeout:  30 * time.Second,
-		L1L2DistanceThreshold: 100,
+		L1L2DistanceThreshold: 10,
 	}
 	ts.prover = NewProver(l2Chain, config)
 }
@@ -98,22 +100,33 @@ func (ts *ProverTestSuite) TestGetLatestFinalizedHeader() {
 func (ts *ProverTestSuite) TestSetupHeadersForUpdate() {
 	header, err := ts.prover.GetLatestFinalizedHeader()
 	ts.Require().NoError(err)
-	h := header.(*Header)
 
-	last := h.Derivations[len(h.Derivations)-1]
-	lastAgreedNumber := last.L2BlockNumber - 1
-	derivations, err := ts.prover.l2Client.SetupDerivations(context.Background(), lastAgreedNumber-10, lastAgreedNumber, h.L1Head.ExecutionUpdate.BlockNumber)
+	trustedHeight := clienttypes.NewHeight(0, header.GetHeight().GetRevisionHeight()-10)
+	cs := &ClientState{
+		LatestHeight: &trustedHeight,
+	}
+	protoClientState, err := codectypes.NewAnyWithValue(exported.ClientState(cs).(proto.Message))
 	ts.Require().NoError(err)
-	// Create preimage data for all derivations
-	preimages, err := ts.prover.l2Client.CreatePreimages(context.Background(), derivations)
+	chain := &mockChain{
+		Chain: ts.prover.l2Client.Chain,
+		mockClientState: &clienttypes.QueryClientStateResponse{
+			ClientState: protoClientState,
+		},
+	}
+	_, err = ts.prover.SetupHeadersForUpdate(chain, header)
 	ts.Require().NoError(err)
-	println(len(preimages))
 }
 
-type MockChain struct {
+type mockChain struct {
 	*ethereum.Chain
+	mockLatestHeader core.Header
+	mockClientState  *clienttypes.QueryClientStateResponse
 }
 
-func (m *MockChain) GetLatestFinalizedHeader() (latestFinalizedHeader core.Header, err error) {
-	return nil, nil
+func (m *mockChain) GetLatestFinalizedHeader() (latestFinalizedHeader core.Header, err error) {
+	return m.mockLatestHeader, nil
+}
+
+func (m *mockChain) QueryClientState(ctx core.QueryContext) (*clienttypes.QueryClientStateResponse, error) {
+	return m.mockClientState, nil
 }
