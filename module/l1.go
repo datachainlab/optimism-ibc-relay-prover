@@ -112,27 +112,57 @@ func (pr *L1Client) BuildInitialState(blockNumber uint64) (*InitialState, error)
 	}, nil
 }
 
-func (pr *L1Client) GetSyncCommitteeBySlot(ctx context.Context, slot uint64, signatureSlot uint64) (bool, *lctypes.SyncCommittee, error) {
-	statePeriod := pr.computeSyncCommitteePeriod(pr.computeEpoch(slot))
-	latestPeriod := pr.computeSyncCommitteePeriod(pr.computeEpoch(signatureSlot))
+func (pr *L1Client) GetSyncCommitteeBySlot(ctx context.Context, trustedSlot uint64, lfh *L1Header) ([]*L1Header, error) {
+	statePeriod := pr.computeSyncCommitteePeriod(pr.computeEpoch(trustedSlot))
+	latestPeriod := pr.computeSyncCommitteePeriod(pr.computeEpoch(lfh.ConsensusUpdate.SignatureSlot))
 	res, err := pr.beaconClient.GetLightClientUpdate(statePeriod)
 	if err != nil {
-		return false, nil, errors.WithStack(err)
+		return nil, errors.WithStack(err)
 	}
 	if statePeriod == latestPeriod {
 		root, err := res.Data.FinalizedHeader.Beacon.HashTreeRoot()
 		if err != nil {
-			return false, nil, errors.WithStack(err)
+			return nil, errors.WithStack(err)
 		}
 		bootstrapRes, err := pr.beaconClient.GetBootstrap(root[:])
 		if err != nil {
-			return false, nil, errors.WithStack(err)
+			return nil, errors.WithStack(err)
 		}
-		return false, bootstrapRes.Data.CurrentSyncCommittee.ToProto(), nil
-	} else {
-		return true, res.Data.NextSyncCommittee.ToProto(), nil
+		lfh.TrustedSyncCommittee = &lctypes.TrustedSyncCommittee{
+			SyncCommittee: bootstrapRes.Data.CurrentSyncCommittee.ToProto(),
+			IsNext:        false,
+		}
+		return nil, nil
+	} else if statePeriod > latestPeriod {
+		return nil, fmt.Errorf("the light-client server's response is old: client_state_period=%v latest_finalized_period=%v", statePeriod, latestPeriod)
 	}
 
+	//--------- In case statePeriod < latestPeriod ---------//
+
+	var (
+		headers                     []*L1Header
+		trustedNextSyncCommittee    *lctypes.SyncCommittee
+		trustedCurrentSyncCommittee *lctypes.SyncCommittee
+	)
+	res, err = pr.beaconClient.GetLightClientUpdate(statePeriod)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get LightClientUpdate: state_period=%v %v", statePeriod, err)
+	}
+	trustedNextSyncCommittee = res.Data.ToProto().NextSyncCommittee
+	for p := statePeriod + 1; p <= latestPeriod; p++ {
+		header, err := pr.buildNextSyncCommitteeUpdate(p, trustedNextSyncCommittee)
+		if err != nil {
+			return nil, fmt.Errorf("failed to build next sync committee update for next: period=%v %v", p, err)
+		}
+		trustedCurrentSyncCommittee = trustedNextSyncCommittee
+		trustedNextSyncCommittee = header.ConsensusUpdate.NextSyncCommittee
+		headers = append(headers, header)
+	}
+	lfh.TrustedSyncCommittee = &lctypes.TrustedSyncCommittee{
+		SyncCommittee: trustedCurrentSyncCommittee,
+		IsNext:        false,
+	}
+	return append(headers, lfh), nil
 }
 
 func (pr *L1Client) timestampAt(ctx context.Context, number uint64) (uint64, error) {
@@ -167,7 +197,7 @@ func (pr *L1Client) getBootstrapInPeriod(period uint64) (*lctypes.SyncCommittee,
 	return nil, fmt.Errorf("failed to get bootstrap in period: period=%v err=%v", period, errors.Join(errs...))
 }
 
-func (pr *L1Client) buildNextSyncCommitteeUpdate(period uint64, trustedHeight clienttypes.Height, trustedNextSyncCommittee *lctypes.SyncCommittee) (*L1Header, error) {
+func (pr *L1Client) buildNextSyncCommitteeUpdate(period uint64, trustedNextSyncCommittee *lctypes.SyncCommittee) (*L1Header, error) {
 	res, err := pr.beaconClient.GetLightClientUpdate(period)
 	if err != nil {
 		return nil, err
@@ -188,7 +218,6 @@ func (pr *L1Client) buildNextSyncCommitteeUpdate(period uint64, trustedHeight cl
 
 	return &L1Header{
 		TrustedSyncCommittee: &lctypes.TrustedSyncCommittee{
-			TrustedHeight: &trustedHeight,
 			SyncCommittee: trustedNextSyncCommittee,
 			IsNext:        true,
 		},

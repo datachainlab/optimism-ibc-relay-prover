@@ -169,10 +169,11 @@ func (cl BeaconClient) GetLightClientUpdates(period uint64, count uint64) (beaco
 	if err := cl.get(fmt.Sprintf("/eth/v1/beacon/light_client/updates?start_period=%v&count=%v", period, count), &res); err != nil {
 		return nil, err
 	}
-	if len(res) != int(count) {
-		return nil, fmt.Errorf("unexpected response length: expected=%v actual=%v", count, len(res))
-	}
-	return res, nil
+	//FIXME count is ignored in lighthouse.
+	/*if len(res) != int(count) {
+		return nil, fmt.Errorf("unexpected response length: period=%d, expected=%v actual=%v", period, count, len(res))
+	}*/
+	return res[0:count], nil
 }
 
 func (cl BeaconClient) GetLightClientUpdate(period uint64) (*beacon.LightClientUpdateResponse, error) {

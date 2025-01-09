@@ -99,13 +99,9 @@ func (pr *Prover) SetupHeadersForUpdate(counterparty core.FinalityAwareChain, la
 		return nil, err
 	}
 	consState := ibcConsState.(*ConsensusState)
-	isNext, trustedSyncCommittee, err := pr.l1Client.GetSyncCommitteeBySlot(ctx, consState.L1Slot, header.L1Head.ConsensusUpdate.SignatureSlot)
+	l1HeadersToUpdateSyncCommittee, err := pr.l1Client.GetSyncCommitteeBySlot(ctx, consState.L1Slot, header.L1Head)
 	if err != nil {
 		return nil, err
-	}
-	header.L1Head.TrustedSyncCommittee = &types2.TrustedSyncCommittee{
-		SyncCommittee: trustedSyncCommittee,
-		IsNext:        isNext,
 	}
 	pr.GetLogger().Info("SetupHeadersForUpdate",
 		"l2", last.L2BlockNumber,
@@ -113,9 +109,20 @@ func (pr *Prover) SetupHeadersForUpdate(counterparty core.FinalityAwareChain, la
 		"l1-slot", header.L1Head.ConsensusUpdate.FinalizedHeader.Slot,
 		"trusted-l2", trustedHeight.GetRevisionHeight(),
 		"trusted-l1-slot", consState.L1Slot,
-		"l1-sync-committee-next", isNext)
-	//TODO Fill l1 histories from cons slot to latest finalized slot so as to recover from long down of relayer
-	return []core.Header{header}, nil
+		"l1-sync-committee-to-update-len", len(l1HeadersToUpdateSyncCommittee))
+
+	trusted := clienttypes.NewHeight(trustedHeight.GetRevisionNumber(), trustedHeight.GetRevisionHeight())
+	header.TrustedHeight = &trusted
+
+	// Only L1 update headers
+	headers := make([]core.Header, len(l1HeadersToUpdateSyncCommittee))
+	for i, l1Header := range l1HeadersToUpdateSyncCommittee {
+		headers[i] = &Header{
+			TrustedHeight: &trusted,
+			L1Head:        l1Header,
+		}
+	}
+	return append(headers, header), nil
 }
 
 func (pr *Prover) CheckRefreshRequired(counterparty core.ChainInfoICS02Querier) (bool, error) {
