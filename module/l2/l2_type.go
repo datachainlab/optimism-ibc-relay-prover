@@ -1,4 +1,4 @@
-package module
+package l2
 
 import (
 	"github.com/ethereum/go-ethereum/common"

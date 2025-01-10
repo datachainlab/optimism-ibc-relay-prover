@@ -1,4 +1,4 @@
-package module
+package l2
 
 import (
 	"bytes"
@@ -10,6 +10,8 @@ import (
 	ibcexported "github.com/cosmos/ibc-go/v8/modules/core/exported"
 	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/relay/ethereum"
 	lctypes "github.com/datachainlab/ethereum-ibc-relay-prover/light-clients/ethereum/types"
+	"github.com/datachainlab/optimism-ibc-relay-prover/module"
+	"github.com/datachainlab/optimism-ibc-relay-prover/module/config"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -20,16 +22,16 @@ import (
 
 type L2Derivation struct {
 	L1 L1BlockRef
-	L2 Derivation
+	L2 module.Derivation
 }
 
 type L2Client struct {
-	config *ProverConfig
+	config *config.ProverConfig
 	*ethereum.Chain
 	l1ExecutionClient *ethclient.Client
 }
 
-func NewL2Client(config *ProverConfig, chain *ethereum.Chain) *L2Client {
+func NewL2Client(config *config.ProverConfig, chain *ethereum.Chain) *L2Client {
 	l1ExecutionClient, err := ethclient.Dial(config.L1ExecutionEndpoint)
 	if err != nil {
 		panic(err)
@@ -76,7 +78,7 @@ func (c *L2Client) LatestDerivation(ctx context.Context) (*L2Derivation, error) 
 
 	return &L2Derivation{
 		L1: syncStatus.FinalizedL1,
-		L2: Derivation{
+		L2: module.Derivation{
 			AgreedL2HeadHash:   agreedOutput.BlockRef.Hash.Bytes(),
 			AgreedL2OutputRoot: agreedOutput.OutputRoot[:],
 			L2HeadHash:         finalized.Hash.Bytes(),
@@ -114,7 +116,7 @@ func (c *L2Client) SetupDerivations(ctx context.Context, trustedHeight uint64, l
 				Hash:   header.Hash(),
 				Number: l1Number,
 			},
-			L2: Derivation{
+			L2: module.Derivation{
 				AgreedL2HeadHash:   agreedOutput.BlockRef.Hash.Bytes(),
 				AgreedL2OutputRoot: agreedOutput.OutputRoot[:],
 				L2HeadHash:         claimedOutput.BlockRef.Hash.Bytes(),
@@ -197,7 +199,7 @@ func (c *L2Client) BuildStateProof(path []byte, height uint64) ([]byte, error) {
 	// calculate slot for commitment
 	storageKey := crypto.Keccak256Hash(append(
 		crypto.Keccak256Hash(path).Bytes(),
-		IBCCommitmentsSlot.Bytes()...,
+		module.IBCCommitmentsSlot.Bytes()...,
 	))
 	storageKeyHex, err := storageKey.MarshalText()
 	if err != nil {

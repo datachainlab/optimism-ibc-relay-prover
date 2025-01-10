@@ -10,6 +10,8 @@ import (
 	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/relay/ethereum"
 	"github.com/datachainlab/ethereum-ibc-relay-prover/light-clients/ethereum/types"
 	"github.com/datachainlab/ibc-hd-signer/pkg/hd"
+	config2 "github.com/datachainlab/optimism-ibc-relay-prover/module/config"
+	"github.com/datachainlab/optimism-ibc-relay-prover/module/l1"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/hyperledger-labs/yui-relayer/config"
 	"github.com/hyperledger-labs/yui-relayer/core"
@@ -65,7 +67,7 @@ func (ts *ProverTestSuite) SetupTest() {
 	}, nil, nil)
 	ts.Require().NoError(err)
 
-	config := ProverConfig{
+	config := config2.ProverConfig{
 		TrustingPeriod: 100 * time.Second,
 		MaxClockDrift:  1 * time.Millisecond,
 		RefreshThresholdRate: &types.Fraction{
@@ -77,7 +79,6 @@ func (ts *ProverTestSuite) SetupTest() {
 		L1BeaconEndpoint:      "http://localhost:5052",
 		PreimageMakerEndpoint: "http://localhost:10080",
 		PreimageMakerTimeout:  240 * time.Second,
-		L1L2DistanceThreshold: 10,
 	}
 	ts.prover = NewProver(l2Chain, config)
 }
@@ -115,12 +116,12 @@ func (ts *ProverTestSuite) TestSetupHeadersForUpdate() {
 	ts.Require().NoError(err)
 
 	// cons state
-	tm, err := ts.prover.l1Client.timestampAt(context.Background(), h.L1Head.ExecutionUpdate.BlockNumber)
+	tm, err := ts.prover.l1Client.TimestampAt(context.Background(), h.L1Head.ExecutionUpdate.BlockNumber)
 	ts.Require().NoError(err)
-	slot, err := ts.prover.l1Client.getSlotAtTimestamp(tm)
+	slot, err := ts.prover.l1Client.GetSlotAtTimestamp(tm)
 	ts.Require().NoError(err)
 	const additionalPeriods = 10
-	const additionalSlots = MINIMAL_SLOTS_PER_EPOCH * MINIMAL_EPOCHS_PER_SYNC_COMMITTEE_PERIOD * additionalPeriods
+	const additionalSlots = l1.MINIMAL_SLOTS_PER_EPOCH * l1.MINIMAL_EPOCHS_PER_SYNC_COMMITTEE_PERIOD * additionalPeriods
 	consState := &ConsensusState{
 		L1Slot: slot - additionalSlots,
 	}

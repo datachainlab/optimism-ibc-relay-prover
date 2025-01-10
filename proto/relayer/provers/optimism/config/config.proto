@@ -1,7 +1,7 @@
 syntax = "proto3";
 package relayer.provers.optimism.config;
 
-option go_package = "github.com/datachainlab/optimism-ibc-relay-prover/module";
+option go_package = "github.com/datachainlab/optimism-ibc-relay-prover/module/config";
 import "ibc/lightclients/ethereum/v1/ethereum.proto";
 import "google/protobuf/duration.proto";
 import "gogoproto/gogo.proto";
@@ -15,5 +15,4 @@ message ProverConfig {
   string l1_beacon_endpoint = 6;
   string preimage_maker_endpoint = 7;
   google.protobuf.Duration preimage_maker_timeout = 8 [(gogoproto.nullable) = false, (gogoproto.stdduration) = true];
-  uint64 l1_l2_distance_threshold = 9;
 }

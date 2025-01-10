@@ -10,6 +10,9 @@ import (
 	ibcexported "github.com/cosmos/ibc-go/v8/modules/core/exported"
 	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/relay/ethereum"
 	types2 "github.com/datachainlab/ethereum-ibc-relay-prover/light-clients/ethereum/types"
+	"github.com/datachainlab/optimism-ibc-relay-prover/module/config"
+	"github.com/datachainlab/optimism-ibc-relay-prover/module/l1"
+	"github.com/datachainlab/optimism-ibc-relay-prover/module/l2"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/hyperledger-labs/yui-relayer/core"
 	"github.com/hyperledger-labs/yui-relayer/log"
@@ -19,9 +22,9 @@ import (
 var IBCCommitmentsSlot = common.HexToHash("1ee222554989dda120e26ecacf756fe1235cd8d726706b57517715dde4f0c900")
 
 type Prover struct {
-	config   ProverConfig
-	l2Client *L2Client
-	l1Client *L1Client
+	config   config.ProverConfig
+	l2Client *l2.L2Client
+	l1Client *l1.L1Client
 	codec    codec.ProtoCodecMarshaler
 }
 
@@ -263,9 +266,9 @@ func (pr *Prover) newHeight(blockNumber uint64) clienttypes.Height {
 	return clienttypes.NewHeight(0, blockNumber)
 }
 
-func NewProver(chain *ethereum.Chain, config ProverConfig) *Prover {
-	l2Client := NewL2Client(&config, chain)
-	l1Client, err := NewL1Client(context.Background(), &config)
+func NewProver(chain *ethereum.Chain, config config.ProverConfig) *Prover {
+	l2Client := l2.NewL2Client(&config, chain)
+	l1Client, err := l1.NewL1Client(context.Background(), &config)
 	if err != nil {
 		panic(err)
 	}

@@ -1,10 +1,11 @@
-package module
+package l2
 
 import (
 	"context"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/relay/ethereum"
 	"github.com/datachainlab/ibc-hd-signer/pkg/hd"
+	"github.com/datachainlab/optimism-ibc-relay-prover/module/config"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/hyperledger-labs/yui-relayer/core"
 	"github.com/hyperledger-labs/yui-relayer/log"
@@ -55,11 +56,10 @@ func (ts *L2TestSuite) SetupTest() {
 	}, nil, nil)
 	ts.Require().NoError(err)
 
-	config := ProverConfig{
+	config := config.ProverConfig{
 		OpNodeEndpoint:        "http://localhost:7545",
 		L1ExecutionEndpoint:   "http://localhost:8545",
 		PreimageMakerEndpoint: "http://localhost:10080",
-		L1L2DistanceThreshold: 10,
 	}
 	ts.l2Client = NewL2Client(&config, l2Chain)
 }

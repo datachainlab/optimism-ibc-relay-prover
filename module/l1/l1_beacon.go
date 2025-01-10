@@ -1,4 +1,4 @@
-package module
+package l1
 
 import (
 	"context"
@@ -73,7 +73,7 @@ func (pr *L1Client) computeEpoch(slot uint64) uint64 {
 	return slot / pr.slotsPerEpoch()
 }
 
-func (pr *L1Client) getSlotAtTimestamp(timestamp uint64) (uint64, error) {
+func (pr *L1Client) GetSlotAtTimestamp(timestamp uint64) (uint64, error) {
 	genesis, err := pr.beaconClient.GetGenesis()
 	if err != nil {
 		return 0, err
@@ -89,11 +89,11 @@ func (pr *L1Client) getSlotAtTimestamp(timestamp uint64) (uint64, error) {
 
 // returns a period corresponding to a given execution block number
 func (pr *L1Client) getPeriodWithBlockNumber(blockNumber uint64) (uint64, error) {
-	timestamp, err := pr.timestampAt(context.Background(), blockNumber)
+	timestamp, err := pr.TimestampAt(context.Background(), blockNumber)
 	if err != nil {
 		return 0, err
 	}
-	slot, err := pr.getSlotAtTimestamp(timestamp)
+	slot, err := pr.GetSlotAtTimestamp(timestamp)
 	if err != nil {
 		return 0, err
 	}
