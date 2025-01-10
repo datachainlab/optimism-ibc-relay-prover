@@ -109,7 +109,7 @@ func (pr *Prover) SetupHeadersForUpdate(counterparty core.FinalityAwareChain, la
 		"l1-slot", header.L1Head.ConsensusUpdate.FinalizedHeader.Slot,
 		"trusted-l2", trustedHeight.GetRevisionHeight(),
 		"trusted-l1-slot", consState.L1Slot,
-		"l1-sync-committee-to-update-len", len(l1HeadersToUpdateSyncCommittee))
+		"l1-sync-committee-additional-len", len(l1HeadersToUpdateSyncCommittee))
 
 	trusted := clienttypes.NewHeight(trustedHeight.GetRevisionNumber(), trustedHeight.GetRevisionHeight())
 	header.TrustedHeight = &trusted

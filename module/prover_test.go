@@ -76,7 +76,7 @@ func (ts *ProverTestSuite) SetupTest() {
 		L1ExecutionEndpoint:   "http://localhost:8545",
 		L1BeaconEndpoint:      "http://localhost:5052",
 		PreimageMakerEndpoint: "http://localhost:10080",
-		PreimageMakerTimeout:  30 * time.Second,
+		PreimageMakerTimeout:  240 * time.Second,
 		L1L2DistanceThreshold: 10,
 	}
 	ts.prover = NewProver(l2Chain, config)
@@ -107,7 +107,7 @@ func (ts *ProverTestSuite) TestSetupHeadersForUpdate() {
 	h := header.(*Header)
 
 	// client state
-	trustedHeight := clienttypes.NewHeight(0, header.GetHeight().GetRevisionHeight()-2)
+	trustedHeight := clienttypes.NewHeight(0, header.GetHeight().GetRevisionHeight()-10)
 	cs := &ClientState{
 		LatestHeight: &trustedHeight,
 	}
@@ -119,8 +119,10 @@ func (ts *ProverTestSuite) TestSetupHeadersForUpdate() {
 	ts.Require().NoError(err)
 	slot, err := ts.prover.l1Client.getSlotAtTimestamp(tm)
 	ts.Require().NoError(err)
+	const additionalPeriods = 10
+	const additionalSlots = MINIMAL_SLOTS_PER_EPOCH * MINIMAL_EPOCHS_PER_SYNC_COMMITTEE_PERIOD * additionalPeriods
 	consState := &ConsensusState{
-		L1Slot: slot,
+		L1Slot: slot - additionalSlots,
 	}
 	protoConsState, err := codectypes.NewAnyWithValue(exported.ConsensusState(consState).(proto.Message))
 	ts.Require().NoError(err)
@@ -137,8 +139,10 @@ func (ts *ProverTestSuite) TestSetupHeadersForUpdate() {
 	}
 	headers, err := ts.prover.SetupHeadersForUpdate(chain, header)
 	ts.Require().NoError(err)
-	ts.Require().True(len(headers) > 0)
-	h = headers[0].(*Header)
+	ts.Require().True(len(headers) == additionalPeriods+1+1 || len(headers) == additionalPeriods+1+2, len(headers))
+
+	// Only the last header contains L2 derivation
+	h = headers[len(headers)-1].(*Header)
 	ts.Require().True(len(h.Preimages) > 0)
 	ts.Require().True(len(h.Derivations) > 0)
 }
