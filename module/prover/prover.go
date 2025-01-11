@@ -13,10 +13,13 @@ import (
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l1"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l2"
 	types3 "github.com/datachainlab/optimism-ibc-relay-prover/module/types"
+	"github.com/datachainlab/optimism-ibc-relay-prover/module/util"
 	"github.com/hyperledger-labs/yui-relayer/core"
 	"github.com/hyperledger-labs/yui-relayer/log"
 	"time"
 )
+
+const ModuleName = "optimism-light-client"
 
 type Prover struct {
 	l2Client *l2.L2Client
@@ -180,9 +183,9 @@ func (pr *Prover) CheckRefreshRequired(counterparty core.ChainInfoICS02Querier) 
 
 func (pr *Prover) ProveState(ctx core.QueryContext, path string, value []byte) ([]byte, types.Height, error) {
 	proofHeight := ctx.Height().GetRevisionHeight()
-	height := pr.newHeight(proofHeight)
+	height := util.NewHeight(proofHeight)
 	proof, err := pr.l2Client.BuildStateProof([]byte(path), proofHeight)
-	return proof, height, err
+	return proof, *height, err
 }
 
 func (pr *Prover) ProveHostConsensusState(ctx core.QueryContext, height ibcexported.Height, consensusState ibcexported.ConsensusState) (proof []byte, err error) {
@@ -190,7 +193,7 @@ func (pr *Prover) ProveHostConsensusState(ctx core.QueryContext, height ibcexpor
 }
 
 func (pr *Prover) GetLogger() *log.RelayLogger {
-	return log.GetLogger().WithChain(pr.l2Client.ChainID()).WithModule("optimism-light-client")
+	return log.GetLogger().WithChain(pr.l2Client.ChainID()).WithModule(ModuleName)
 }
 
 var _ core.Prover = (*Prover)(nil)
@@ -228,7 +231,7 @@ func (pr *Prover) CreateInitialLightClientState(height ibcexported.Height) (ibce
 		return nil, nil, err
 	}
 
-	latestHeight := pr.newHeight(derivation.L2.L2BlockNumber)
+	latestHeight := util.NewHeight(derivation.L2.L2BlockNumber)
 
 	l1InitialState, err := pr.l1Client.BuildInitialState(derivation.L1.Number)
 	if err != nil {
@@ -244,7 +247,7 @@ func (pr *Prover) CreateInitialLightClientState(height ibcexported.Height) (ibce
 		ChainId:            chainID.Uint64(),
 		IbcStoreAddress:    pr.l2Client.Config().IBCAddress().Bytes(),
 		IbcCommitmentsSlot: l2.IBCCommitmentsSlot[:],
-		LatestHeight:       &latestHeight,
+		LatestHeight:       latestHeight,
 		TrustingPeriod:     pr.trustingPeriod,
 		MaxClockDrift:      pr.maxClockDrift,
 		Frozen:             false,
@@ -271,10 +274,6 @@ func (pr *Prover) SetRelayInfo(path *core.PathEnd, counterparty *core.ProvableCh
 // SetupForRelay performs chain-specific setup before starting the relay
 func (pr *Prover) SetupForRelay(ctx context.Context) error {
 	return nil
-}
-
-func (pr *Prover) newHeight(blockNumber uint64) clienttypes.Height {
-	return clienttypes.NewHeight(0, blockNumber)
 }
 
 func NewProver(chain *ethereum.Chain,

@@ -9,6 +9,7 @@ import (
 	"github.com/datachainlab/ethereum-ibc-relay-prover/beacon"
 	lctypes "github.com/datachainlab/ethereum-ibc-relay-prover/light-clients/ethereum/types"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/types"
+	"github.com/datachainlab/optimism-ibc-relay-prover/module/util"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"math/big"
 )
@@ -130,6 +131,7 @@ func (pr *L1Client) GetSyncCommitteeBySlot(ctx context.Context, trustedSlot uint
 			return nil, errors.WithStack(err)
 		}
 		lfh.TrustedSyncCommittee = &lctypes.TrustedSyncCommittee{
+			TrustedHeight: util.NewHeight(1), // unused l1 execution number
 			SyncCommittee: bootstrapRes.Data.CurrentSyncCommittee.ToProto(),
 			IsNext:        false,
 		}
@@ -160,10 +162,11 @@ func (pr *L1Client) GetSyncCommitteeBySlot(ctx context.Context, trustedSlot uint
 		headers = append(headers, header)
 	}
 	lfh.TrustedSyncCommittee = &lctypes.TrustedSyncCommittee{
+		TrustedHeight: util.NewHeight(1),
 		SyncCommittee: trustedCurrentSyncCommittee,
 		IsNext:        false,
 	}
-	return append(headers, lfh), nil
+	return headers, nil
 }
 
 func (pr *L1Client) TimestampAt(ctx context.Context, number uint64) (uint64, error) {

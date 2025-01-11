@@ -10,7 +10,7 @@ import (
 	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/relay/ethereum"
 	"github.com/datachainlab/ethereum-ibc-relay-prover/light-clients/ethereum/types"
 	"github.com/datachainlab/ibc-hd-signer/pkg/hd"
-	l12 "github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l1"
+	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l1"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l2"
 	types2 "github.com/datachainlab/optimism-ibc-relay-prover/module/types"
 	"github.com/ethereum/go-ethereum/common"
@@ -79,7 +79,7 @@ func (ts *ProverTestSuite) SetupTest() {
 	l1BeaconEndpoint := "http://localhost:5052"
 	preimageMakerEndpoint := "http://localhost:10080"
 	preimageMakerTimeout := 240 * time.Second
-	l1Client, err := l12.NewL1Client(context.Background(), l1BeaconEndpoint, l1ExecutionEndpoint)
+	l1Client, err := l1.NewL1Client(context.Background(), l1BeaconEndpoint, l1ExecutionEndpoint)
 	ts.Require().NoError(err)
 	l2Client := l2.NewL2Client(l2Chain, l1ExecutionEndpoint, preimageMakerTimeout, preimageMakerEndpoint, opNodeEndpoint)
 	ts.prover = NewProver(l2Chain, l1Client, l2Client, trustingPeriod, refreshThresholdRate, maxClockDrift)
@@ -123,7 +123,7 @@ func (ts *ProverTestSuite) TestSetupHeadersForUpdate() {
 	slot, err := ts.prover.l1Client.GetSlotAtTimestamp(tm)
 	ts.Require().NoError(err)
 	const additionalPeriods = 10
-	const additionalSlots = l12.MINIMAL_SLOTS_PER_EPOCH * l12.MINIMAL_EPOCHS_PER_SYNC_COMMITTEE_PERIOD * additionalPeriods
+	const additionalSlots = l1.MINIMAL_SLOTS_PER_EPOCH * l1.MINIMAL_EPOCHS_PER_SYNC_COMMITTEE_PERIOD * additionalPeriods
 	consState := &types2.ConsensusState{
 		L1Slot: slot - additionalSlots,
 	}
@@ -142,7 +142,7 @@ func (ts *ProverTestSuite) TestSetupHeadersForUpdate() {
 	}
 	headers, err := ts.prover.SetupHeadersForUpdate(chain, header)
 	ts.Require().NoError(err)
-	ts.Require().True(len(headers) == additionalPeriods+1+1 || len(headers) == additionalPeriods+1+2, len(headers))
+	ts.Require().True(len(headers) == additionalPeriods+1 || len(headers) == additionalPeriods+1+1, len(headers))
 
 	// Only the last header contains L2 derivation
 	h = headers[len(headers)-1].(*types2.Header)
@@ -152,8 +152,27 @@ func (ts *ProverTestSuite) TestSetupHeadersForUpdate() {
 	// output l1 header to test in elc
 	protoL1Head, err := h.L1Head.Marshal()
 	ts.Require().NoError(err)
-	fmt.Printf(common.Bytes2Hex(protoL1Head))
 
+	l1state, err := ts.prover.l1Client.BuildInitialState(h.L1Head.ExecutionUpdate.BlockNumber)
+	ts.Require().NoError(err)
+	l1Config, err := ts.prover.l1Client.BuildL1Config(l1state)
+	ts.Require().NoError(err)
+	l1ConfigBytes, err := proto.Marshal(l1Config)
+	ts.Require().NoError(err)
+
+	beforeLatestTrusted := headers[len(headers)-3].(*types2.Header)
+	latestTrusted := headers[len(headers)-2].(*types2.Header)
+
+	consState = &types2.ConsensusState{
+		L1Slot:                 latestTrusted.L1Head.ConsensusUpdate.FinalizedHeader.Slot,
+		L1CurrentSyncCommittee: beforeLatestTrusted.L1Head.ConsensusUpdate.NextSyncCommittee.AggregatePubkey,
+		L1NextSyncCommittee:    latestTrusted.L1Head.ConsensusUpdate.NextSyncCommittee.AggregatePubkey,
+	}
+	fmt.Println(common.Bytes2Hex(protoL1Head))
+	fmt.Println(common.Bytes2Hex(l1ConfigBytes))
+	fmt.Println(consState.L1Slot)
+	fmt.Println(common.Bytes2Hex(consState.L1CurrentSyncCommittee))
+	fmt.Println(common.Bytes2Hex(consState.L1NextSyncCommittee))
 }
 
 type mockChain struct {
