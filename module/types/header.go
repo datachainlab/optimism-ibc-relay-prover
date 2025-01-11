@@ -1,4 +1,4 @@
-package module
+package types
 
 import (
 	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"

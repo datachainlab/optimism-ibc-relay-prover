@@ -8,8 +8,7 @@ import (
 	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
 	"github.com/datachainlab/ethereum-ibc-relay-prover/beacon"
 	lctypes "github.com/datachainlab/ethereum-ibc-relay-prover/light-clients/ethereum/types"
-	"github.com/datachainlab/optimism-ibc-relay-prover/module"
-	"github.com/datachainlab/optimism-ibc-relay-prover/module/config"
+	"github.com/datachainlab/optimism-ibc-relay-prover/module/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"math/big"
 )
@@ -28,8 +27,8 @@ type L1Client struct {
 	config          *L1ProverConfig
 }
 
-func (pr *L1Client) BuildL1Config(state *InitialState) (*module.L1Config, error) {
-	return &module.L1Config{
+func (pr *L1Client) BuildL1Config(state *InitialState) (*types.L1Config, error) {
+	return &types.L1Config{
 		GenesisValidatorsRoot:        state.Genesis.GenesisValidatorsRoot[:],
 		MinSyncCommitteeParticipants: 1,
 		GenesisTime:                  state.Genesis.GenesisTimeSeconds,
@@ -44,7 +43,7 @@ func (pr *L1Client) BuildL1Config(state *InitialState) (*module.L1Config, error)
 	}, nil
 }
 
-func (pr *L1Client) BuildConsensusUpdateAt(blockNumber uint64) (*module.L1Header, error) {
+func (pr *L1Client) BuildConsensusUpdateAt(blockNumber uint64) (*types.L1Header, error) {
 	timestamp, err := pr.TimestampAt(context.Background(), blockNumber)
 	if err != nil {
 		return nil, err
@@ -72,7 +71,7 @@ func (pr *L1Client) BuildConsensusUpdateAt(blockNumber uint64) (*module.L1Header
 	if !bytes.Equal(executionRoot[:], lcUpdate.FinalizedExecutionRoot) {
 		return nil, fmt.Errorf("execution root mismatch: %X != %X", executionRoot, lcUpdate.FinalizedExecutionRoot)
 	}
-	return &module.L1Header{
+	return &types.L1Header{
 		ConsensusUpdate: lcUpdate,
 		ExecutionUpdate: executionUpdate,
 	}, nil
@@ -114,7 +113,7 @@ func (pr *L1Client) BuildInitialState(blockNumber uint64) (*InitialState, error)
 	}, nil
 }
 
-func (pr *L1Client) GetSyncCommitteeBySlot(ctx context.Context, trustedSlot uint64, lfh *module.L1Header) ([]*module.L1Header, error) {
+func (pr *L1Client) GetSyncCommitteeBySlot(ctx context.Context, trustedSlot uint64, lfh *types.L1Header) ([]*types.L1Header, error) {
 	statePeriod := pr.computeSyncCommitteePeriod(pr.computeEpoch(trustedSlot))
 	latestPeriod := pr.computeSyncCommitteePeriod(pr.computeEpoch(lfh.ConsensusUpdate.SignatureSlot))
 	res, err := pr.beaconClient.GetLightClientUpdate(statePeriod)
@@ -142,7 +141,7 @@ func (pr *L1Client) GetSyncCommitteeBySlot(ctx context.Context, trustedSlot uint
 	//--------- In case statePeriod < latestPeriod ---------//
 
 	var (
-		headers                     []*module.L1Header
+		headers                     []*types.L1Header
 		trustedNextSyncCommittee    *lctypes.SyncCommittee
 		trustedCurrentSyncCommittee *lctypes.SyncCommittee
 	)
@@ -199,7 +198,7 @@ func (pr *L1Client) getBootstrapInPeriod(period uint64) (*lctypes.SyncCommittee,
 	return nil, fmt.Errorf("failed to get bootstrap in period: period=%v err=%v", period, errors.Join(errs...))
 }
 
-func (pr *L1Client) buildNextSyncCommitteeUpdate(period uint64, trustedNextSyncCommittee *lctypes.SyncCommittee) (*module.L1Header, error) {
+func (pr *L1Client) buildNextSyncCommitteeUpdate(period uint64, trustedNextSyncCommittee *lctypes.SyncCommittee) (*types.L1Header, error) {
 	res, err := pr.beaconClient.GetLightClientUpdate(period)
 	if err != nil {
 		return nil, err
@@ -218,7 +217,7 @@ func (pr *L1Client) buildNextSyncCommitteeUpdate(period uint64, trustedNextSyncC
 		return nil, fmt.Errorf("execution root mismatch: %X != %X", executionRoot, lcUpdate.FinalizedExecutionRoot)
 	}
 
-	return &module.L1Header{
+	return &types.L1Header{
 		TrustedSyncCommittee: &lctypes.TrustedSyncCommittee{
 			SyncCommittee: trustedNextSyncCommittee,
 			IsNext:        true,
@@ -232,9 +231,9 @@ func (pr *L1Client) newHeight(blockNumber uint64) clienttypes.Height {
 	return clienttypes.NewHeight(0, blockNumber)
 }
 
-func NewL1Client(ctx context.Context, config *config.ProverConfig) (*L1Client, error) {
-	beaconClient := NewBeaconClient(config.L1BeaconEndpoint)
-	executionClient, err := ethclient.DialContext(ctx, config.L1ExecutionEndpoint)
+func NewL1Client(ctx context.Context, l1BeaconEndpoint, l1ExecutionEndpoint string) (*L1Client, error) {
+	beaconClient := NewBeaconClient(l1BeaconEndpoint)
+	executionClient, err := ethclient.DialContext(ctx, l1ExecutionEndpoint)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
@@ -261,7 +260,7 @@ func NewL1Client(ctx context.Context, config *config.ProverConfig) (*L1Client, e
 	}, nil
 }
 
-func (pr *L1Client) GetLatestFinalizedL1Header() (*module.L1Header, error) {
+func (pr *L1Client) GetLatestFinalizedL1Header() (*types.L1Header, error) {
 	res, err := pr.beaconClient.GetLightClientFinalityUpdate()
 	if err != nil {
 		return nil, errors.WithStack(err)
@@ -279,7 +278,7 @@ func (pr *L1Client) GetLatestFinalizedL1Header() (*module.L1Header, error) {
 	if !bytes.Equal(executionRoot[:], lcUpdate.FinalizedExecutionRoot) {
 		return nil, fmt.Errorf("execution root mismatch: %X != %X", executionRoot, lcUpdate.FinalizedExecutionRoot)
 	}
-	return &module.L1Header{
+	return &types.L1Header{
 		ConsensusUpdate: lcUpdate,
 		ExecutionUpdate: executionUpdate,
 	}, nil

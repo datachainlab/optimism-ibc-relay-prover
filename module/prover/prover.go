@@ -1,4 +1,4 @@
-package module
+package prover
 
 import (
 	"context"
@@ -10,22 +10,23 @@ import (
 	ibcexported "github.com/cosmos/ibc-go/v8/modules/core/exported"
 	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/relay/ethereum"
 	types2 "github.com/datachainlab/ethereum-ibc-relay-prover/light-clients/ethereum/types"
-	"github.com/datachainlab/optimism-ibc-relay-prover/module/config"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/l1"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/l2"
-	"github.com/ethereum/go-ethereum/common"
+	types3 "github.com/datachainlab/optimism-ibc-relay-prover/module/types"
 	"github.com/hyperledger-labs/yui-relayer/core"
 	"github.com/hyperledger-labs/yui-relayer/log"
 	"time"
 )
 
-var IBCCommitmentsSlot = common.HexToHash("1ee222554989dda120e26ecacf756fe1235cd8d726706b57517715dde4f0c900")
-
 type Prover struct {
-	config   config.ProverConfig
 	l2Client *l2.L2Client
 	l1Client *l1.L1Client
-	codec    codec.ProtoCodecMarshaler
+
+	trustingPeriod       time.Duration
+	refreshThresholdRate *types2.Fraction
+	maxClockDrift        time.Duration
+
+	codec codec.ProtoCodecMarshaler
 }
 
 func (pr *Prover) GetLatestFinalizedHeader() (latestFinalizedHeader core.Header, err error) {
@@ -46,16 +47,16 @@ func (pr *Prover) GetLatestFinalizedHeader() (latestFinalizedHeader core.Header,
 	if err != nil {
 		return nil, err
 	}
-	header := &Header{
+	header := &types3.Header{
 		AccountUpdate: accountUpdate,
 		L1Head:        l1Header,
-		Derivations:   []*Derivation{&derivation.L2},
+		Derivations:   []*types3.Derivation{&derivation.L2},
 	}
 	return header, nil
 }
 
 func (pr *Prover) SetupHeadersForUpdate(counterparty core.FinalityAwareChain, latestFinalizedHeader core.Header) ([]core.Header, error) {
-	header := latestFinalizedHeader.(*Header)
+	header := latestFinalizedHeader.(*types3.Header)
 	// LCP doesn't need height / EVM needs latest height
 	latestHeightOnDstChain, err := counterparty.LatestHeight()
 	if err != nil {
@@ -101,7 +102,7 @@ func (pr *Prover) SetupHeadersForUpdate(counterparty core.FinalityAwareChain, la
 	if err = pr.l2Client.Codec().UnpackAny(consStateRes.ConsensusState, &ibcConsState); err != nil {
 		return nil, err
 	}
-	consState := ibcConsState.(*ConsensusState)
+	consState := ibcConsState.(*types3.ConsensusState)
 	l1HeadersToUpdateSyncCommittee, err := pr.l1Client.GetSyncCommitteeBySlot(ctx, consState.L1Slot, header.L1Head)
 	if err != nil {
 		return nil, err
@@ -120,7 +121,7 @@ func (pr *Prover) SetupHeadersForUpdate(counterparty core.FinalityAwareChain, la
 	// Only L1 update headers
 	headers := make([]core.Header, len(l1HeadersToUpdateSyncCommittee))
 	for i, l1Header := range l1HeadersToUpdateSyncCommittee {
-		headers[i] = &Header{
+		headers[i] = &types3.Header{
 			TrustedHeight: &trusted,
 			L1Head:        l1Header,
 		}
@@ -172,7 +173,7 @@ func (pr *Prover) CheckRefreshRequired(counterparty core.ChainInfoICS02Querier) 
 		nsec := d.Nanoseconds() * int64(f.Numerator) / int64(f.Denominator)
 		return time.Duration(nsec) * time.Nanosecond
 	}
-	needsRefresh := elapsedTime > durationMulByFraction(pr.config.GetTrustingPeriod(), pr.config.RefreshThresholdRate)
+	needsRefresh := elapsedTime > durationMulByFraction(pr.trustingPeriod, pr.refreshThresholdRate)
 
 	return needsRefresh, nil
 }
@@ -189,7 +190,7 @@ func (pr *Prover) ProveHostConsensusState(ctx core.QueryContext, height ibcexpor
 }
 
 func (pr *Prover) GetLogger() *log.RelayLogger {
-	return log.GetLogger().WithChain(pr.l2Client.ChainID()).WithModule(ModuleName)
+	return log.GetLogger().WithChain(pr.l2Client.ChainID()).WithModule("optimism-light-client")
 }
 
 var _ core.Prover = (*Prover)(nil)
@@ -239,18 +240,18 @@ func (pr *Prover) CreateInitialLightClientState(height ibcexported.Height) (ibce
 	}
 
 	pr.GetLogger().Info("CreateInitialLightClientState", "l1", derivation.L1.Number, "l2", derivation.L2.L2BlockNumber)
-	clientState := &ClientState{
+	clientState := &types3.ClientState{
 		ChainId:            chainID.Uint64(),
 		IbcStoreAddress:    pr.l2Client.Config().IBCAddress().Bytes(),
-		IbcCommitmentsSlot: IBCCommitmentsSlot[:],
+		IbcCommitmentsSlot: l2.IBCCommitmentsSlot[:],
 		LatestHeight:       &latestHeight,
-		TrustingPeriod:     pr.config.TrustingPeriod,
-		MaxClockDrift:      pr.config.MaxClockDrift,
+		TrustingPeriod:     pr.trustingPeriod,
+		MaxClockDrift:      pr.maxClockDrift,
 		Frozen:             false,
 		RollupConfigJson:   rollupConfig,
 		L1Config:           l1Config,
 	}
-	consensusState := &ConsensusState{
+	consensusState := &types3.ConsensusState{
 		StorageRoot:            accountUpdate.AccountStorageRoot,
 		Timestamp:              timestamp,
 		OutputRoot:             derivation.L2.L2OutputRoot,
@@ -262,20 +263,32 @@ func (pr *Prover) CreateInitialLightClientState(height ibcexported.Height) (ibce
 	return clientState, consensusState, nil
 }
 
+// SetRelayInfo sets source's path and counterparty's info to the chain
+func (pr *Prover) SetRelayInfo(path *core.PathEnd, counterparty *core.ProvableChain, counterpartyPath *core.PathEnd) error {
+	return nil
+}
+
+// SetupForRelay performs chain-specific setup before starting the relay
+func (pr *Prover) SetupForRelay(ctx context.Context) error {
+	return nil
+}
+
 func (pr *Prover) newHeight(blockNumber uint64) clienttypes.Height {
 	return clienttypes.NewHeight(0, blockNumber)
 }
 
-func NewProver(chain *ethereum.Chain, config config.ProverConfig) *Prover {
-	l2Client := l2.NewL2Client(&config, chain)
-	l1Client, err := l1.NewL1Client(context.Background(), &config)
-	if err != nil {
-		panic(err)
-	}
+func NewProver(chain *ethereum.Chain,
+	l1Client *l1.L1Client,
+	l2Client *l2.L2Client,
+	trustingPeriod time.Duration,
+	refreshThresholdRate *types2.Fraction,
+	maxClockDrift time.Duration) *Prover {
 	return &Prover{
-		config:   config,
-		l2Client: l2Client,
-		l1Client: l1Client,
-		codec:    chain.Codec(),
+		l2Client:             l2Client,
+		l1Client:             l1Client,
+		trustingPeriod:       trustingPeriod,
+		refreshThresholdRate: refreshThresholdRate,
+		maxClockDrift:        maxClockDrift,
+		codec:                chain.Codec(),
 	}
 }

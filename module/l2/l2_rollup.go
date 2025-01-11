@@ -63,9 +63,9 @@ func (c *L2Client) call(method string, params []interface{}) ([]byte, error) {
 	}
 
 	httpClient := http.Client{
-		Timeout: c.config.PreimageMakerTimeout,
+		Timeout: c.preimageMakerTimeout,
 	}
-	response, err := httpClient.Post(c.config.OpNodeEndpoint, "application/json", bytes.NewBuffer(body))
+	response, err := httpClient.Post(c.opNodeEndpoint, "application/json", bytes.NewBuffer(body))
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}

@@ -1,9 +1,12 @@
 package config
 
 import (
+	"context"
 	"fmt"
 	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/relay/ethereum"
-	"github.com/datachainlab/optimism-ibc-relay-prover/module"
+	"github.com/datachainlab/optimism-ibc-relay-prover/module/l1"
+	"github.com/datachainlab/optimism-ibc-relay-prover/module/l2"
+	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover"
 	"github.com/hyperledger-labs/yui-relayer/core"
 )
 
@@ -14,7 +17,12 @@ func (c *ProverConfig) Build(chain core.Chain) (core.Prover, error) {
 	if !ok {
 		return nil, fmt.Errorf("chain type must be %T, not %T", &ethereum.Chain{}, chain)
 	}
-	return module.NewProver(l2Chain, *c), nil
+	l1Client, err := l1.NewL1Client(context.Background(), c.L1BeaconEndpoint, c.L1ExecutionEndpoint)
+	if err != nil {
+		return nil, err
+	}
+	l2Client := l2.NewL2Client(l2Chain, c.L1ExecutionEndpoint, c.PreimageMakerTimeout, c.PreimageMakerEndpoint, c.OpNodeEndpoint)
+	return prover.NewProver(l2Chain, l1Client, l2Client, c.TrustingPeriod, c.RefreshThresholdRate, c.MaxClockDrift), nil
 }
 
 func (c *ProverConfig) Validate() error {

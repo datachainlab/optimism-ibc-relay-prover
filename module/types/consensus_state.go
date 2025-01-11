@@ -1,4 +1,4 @@
-package module
+package types
 
 import (
 	commitmenttypes "github.com/cosmos/ibc-go/v8/modules/core/23-commitment/types"

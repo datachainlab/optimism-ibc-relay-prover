@@ -10,36 +10,47 @@ import (
 	ibcexported "github.com/cosmos/ibc-go/v8/modules/core/exported"
 	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/relay/ethereum"
 	lctypes "github.com/datachainlab/ethereum-ibc-relay-prover/light-clients/ethereum/types"
-	"github.com/datachainlab/optimism-ibc-relay-prover/module"
-	"github.com/datachainlab/optimism-ibc-relay-prover/module/config"
+	"github.com/datachainlab/optimism-ibc-relay-prover/module/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"io"
 	"math/big"
 	"net/http"
+	"time"
 )
+
+var IBCCommitmentsSlot = common.HexToHash("1ee222554989dda120e26ecacf756fe1235cd8d726706b57517715dde4f0c900")
 
 type L2Derivation struct {
 	L1 L1BlockRef
-	L2 module.Derivation
+	L2 types.Derivation
 }
 
 type L2Client struct {
-	config *config.ProverConfig
 	*ethereum.Chain
-	l1ExecutionClient *ethclient.Client
+	l1ExecutionClient     *ethclient.Client
+	preimageMakerTimeout  time.Duration
+	preimageMakerEndpoint string
+	opNodeEndpoint        string
 }
 
-func NewL2Client(config *config.ProverConfig, chain *ethereum.Chain) *L2Client {
-	l1ExecutionClient, err := ethclient.Dial(config.L1ExecutionEndpoint)
+func NewL2Client(chain *ethereum.Chain,
+	l1ExecutionEndpoint string,
+	preimageMakerTimeout time.Duration,
+	preimageMakerEndpoint string,
+	opNodeEndpoint string,
+) *L2Client {
+	l1ExecutionClient, err := ethclient.Dial(l1ExecutionEndpoint)
 	if err != nil {
 		panic(err)
 	}
 	return &L2Client{
-		config:            config,
-		Chain:             chain,
-		l1ExecutionClient: l1ExecutionClient,
+		Chain:                 chain,
+		l1ExecutionClient:     l1ExecutionClient,
+		preimageMakerTimeout:  preimageMakerTimeout,
+		preimageMakerEndpoint: preimageMakerEndpoint,
+		opNodeEndpoint:        opNodeEndpoint,
 	}
 }
 
@@ -78,7 +89,7 @@ func (c *L2Client) LatestDerivation(ctx context.Context) (*L2Derivation, error) 
 
 	return &L2Derivation{
 		L1: syncStatus.FinalizedL1,
-		L2: module.Derivation{
+		L2: types.Derivation{
 			AgreedL2HeadHash:   agreedOutput.BlockRef.Hash.Bytes(),
 			AgreedL2OutputRoot: agreedOutput.OutputRoot[:],
 			L2HeadHash:         finalized.Hash.Bytes(),
@@ -116,7 +127,7 @@ func (c *L2Client) SetupDerivations(ctx context.Context, trustedHeight uint64, l
 				Hash:   header.Hash(),
 				Number: l1Number,
 			},
-			L2: module.Derivation{
+			L2: types.Derivation{
 				AgreedL2HeadHash:   agreedOutput.BlockRef.Hash.Bytes(),
 				AgreedL2OutputRoot: agreedOutput.OutputRoot[:],
 				L2HeadHash:         claimedOutput.BlockRef.Hash.Bytes(),
@@ -132,7 +143,7 @@ func (c *L2Client) SetupDerivations(ctx context.Context, trustedHeight uint64, l
 // It marshals the derivations into JSON, sends a POST request to the preimage maker endpoint, and reads the response.
 func (c *L2Client) CreatePreimages(ctx context.Context, derivations []*L2Derivation) ([]byte, error) {
 	httpClient := http.Client{
-		Timeout: c.config.PreimageMakerTimeout,
+		Timeout: c.preimageMakerTimeout,
 	}
 	type rawType struct {
 		L1HeadHash         common.Hash `json:"l1_head_hash"`
@@ -158,7 +169,7 @@ func (c *L2Client) CreatePreimages(ctx context.Context, derivations []*L2Derivat
 		return nil, errors.WithStack(err)
 	}
 	buffer := bytes.NewBuffer(body)
-	response, err := httpClient.Post(fmt.Sprintf("%s/derivation", c.config.PreimageMakerEndpoint), "application/json", buffer)
+	response, err := httpClient.Post(fmt.Sprintf("%s/derivation", c.preimageMakerEndpoint), "application/json", buffer)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
@@ -199,7 +210,7 @@ func (c *L2Client) BuildStateProof(path []byte, height uint64) ([]byte, error) {
 	// calculate slot for commitment
 	storageKey := crypto.Keccak256Hash(append(
 		crypto.Keccak256Hash(path).Bytes(),
-		module.IBCCommitmentsSlot.Bytes()...,
+		IBCCommitmentsSlot.Bytes()...,
 	))
 	storageKeyHex, err := storageKey.MarshalText()
 	if err != nil {
