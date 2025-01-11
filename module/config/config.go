@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/relay/ethereum"
-	"github.com/datachainlab/optimism-ibc-relay-prover/module/l1"
-	"github.com/datachainlab/optimism-ibc-relay-prover/module/l2"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover"
+	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l1"
+	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l2"
 	"github.com/hyperledger-labs/yui-relayer/core"
 )
 
