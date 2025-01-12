@@ -203,5 +203,8 @@ func (cl BeaconClient) get(path string, res any) error {
 	if err != nil {
 		return err
 	}
+	if r.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status code: %d %s", r.StatusCode, string(bz))
+	}
 	return json.Unmarshal(bz, &res)
 }
