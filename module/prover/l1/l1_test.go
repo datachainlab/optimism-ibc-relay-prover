@@ -46,7 +46,7 @@ func (ts *L1TestSuite) TestBuildL1Config() {
 	fmt.Println(common.Bytes2Hex(bytes))
 }
 
-func (ts *L1TestSuite) TestGetLatestFinalizedL1Header() {
+func (ts *L1TestSuite) Test_SamePeriod() {
 	l1Header, err := ts.l1Client.GetLatestFinalizedL1Header()
 	ts.Require().NoError(err)
 
@@ -70,4 +70,50 @@ func (ts *L1TestSuite) TestGetLatestFinalizedL1Header() {
 	fmt.Println(consState.L1Slot)
 	fmt.Println(common.Bytes2Hex(consState.L1CurrentSyncCommittee))
 	fmt.Println(time.Now().Unix())
+}
+
+func (ts *L1TestSuite) Test_MultiPeriod() {
+	l1Header, err := ts.l1Client.GetLatestFinalizedL1Header()
+	ts.Require().NoError(err)
+
+	// Not additional period
+	trustedSlot := l1Header.ConsensusUpdate.SignatureSlot - (3 * ts.l1Client.slotsPerEpoch() * ts.l1Client.epochsPerSyncCommitteePeriod())
+	ctx := context.Background()
+	pastPeriod, err := ts.l1Client.GetSyncCommitteeBySlot(ctx, trustedSlot, l1Header)
+	ts.Require().NoError(err)
+	ts.Require().Len(pastPeriod, 3)
+
+	// oldest is same period as first
+	consState := &types.ConsensusState{
+		L1Slot:              trustedSlot,
+		L1NextSyncCommittee: pastPeriod[0].TrustedSyncCommittee.SyncCommittee.AggregatePubkey,
+	}
+
+	for i, period := range pastPeriod {
+		fmt.Println(i)
+		bytes, err := period.Marshal()
+		ts.Require().NoError(err)
+		fmt.Println(common.Bytes2Hex(bytes))
+		fmt.Println(consState.L1Slot)
+		fmt.Println(common.Bytes2Hex(consState.L1CurrentSyncCommittee))
+		fmt.Println(common.Bytes2Hex(consState.L1NextSyncCommittee))
+		fmt.Println(time.Now().Unix())
+
+		consState = &types.ConsensusState{
+			L1Slot:                 period.ConsensusUpdate.FinalizedHeader.Slot,
+			L1CurrentSyncCommittee: consState.L1NextSyncCommittee,
+			L1NextSyncCommittee:    period.ConsensusUpdate.NextSyncCommittee.AggregatePubkey,
+		}
+	}
+
+	// With sync committee
+	ts.Require().True(l1Header.TrustedSyncCommittee != nil)
+	bytes, err := l1Header.Marshal()
+	ts.Require().NoError(err)
+	fmt.Println(common.Bytes2Hex(bytes))
+	fmt.Println(consState.L1Slot)
+	fmt.Println(common.Bytes2Hex(consState.L1CurrentSyncCommittee))
+	fmt.Println(common.Bytes2Hex(consState.L1NextSyncCommittee))
+	fmt.Println(time.Now().Unix())
+
 }

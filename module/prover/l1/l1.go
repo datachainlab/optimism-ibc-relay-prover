@@ -162,7 +162,7 @@ func (pr *L1Client) GetSyncCommitteeBySlot(ctx context.Context, trustedSlot uint
 		headers = append(headers, header)
 	}
 	lfh.TrustedSyncCommittee = &lctypes.TrustedSyncCommittee{
-		TrustedHeight: util.NewHeight(1),
+		TrustedHeight: util.NewHeight(1), // unused trusted height
 		SyncCommittee: trustedCurrentSyncCommittee,
 		IsNext:        false,
 	}
@@ -222,6 +222,7 @@ func (pr *L1Client) buildNextSyncCommitteeUpdate(period uint64, trustedNextSyncC
 
 	return &types.L1Header{
 		TrustedSyncCommittee: &lctypes.TrustedSyncCommittee{
+			TrustedHeight: util.NewHeight(1), // unused trusted height
 			SyncCommittee: trustedNextSyncCommittee,
 			IsNext:        true,
 		},
