@@ -30,6 +30,7 @@ var (
 		ExecutionPayloadGindex:            25,
 		ExecutionPayloadStateRootGindex:   18,
 		ExecutionPayloadBlockNumberGindex: 22,
+		ExecutionPayloadBlockHashGindex:   28,
 	}
 	CapellaSpec = BellatrixSpec
 	DenebSpec   = lctypes.ForkSpec{
@@ -39,6 +40,7 @@ var (
 		ExecutionPayloadGindex:            CapellaSpec.ExecutionPayloadGindex,
 		ExecutionPayloadStateRootGindex:   34,
 		ExecutionPayloadBlockNumberGindex: 38,
+		ExecutionPayloadBlockHashGindex:   44,
 	}
 )
 

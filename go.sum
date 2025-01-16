@@ -424,8 +424,6 @@ github.com/danieljoos/wincred v1.1.2 h1:QLdCxFs1/Yl4zduvBdcHB8goaYk9RARS2SgLLRuA
 github.com/danieljoos/wincred v1.1.2/go.mod h1:GijpziifJoIBfYh+S7BbkdUTU4LfM+QnGqR5Vl2tAx0=
 github.com/datachainlab/ethereum-ibc-relay-chain v0.3.13 h1:RbYtraeZwN55qfbzfoDIJPK8CWWx5dWfO8CfnvS+dhk=
 github.com/datachainlab/ethereum-ibc-relay-chain v0.3.13/go.mod h1:dxL5umpjncKRw7iBFE2W+dGpmmWOiggth0aQsJrtLKM=
-github.com/datachainlab/ethereum-ibc-relay-prover v0.3.6 h1:fUFCsWfyH4BhRUNuMwDYdSgvEGt67jj3g7dSj1ETVUE=
-github.com/datachainlab/ethereum-ibc-relay-prover v0.3.6/go.mod h1:3GRE2JnWyKGyPYswwMpldOdlGDE2hry4ymTPGXY2SHg=
 github.com/datachainlab/ibc-hd-signer v0.1.1 h1:ws90eXVjjLcx2i6iPJu2bJ2w06tIeuSyIBfYbOIEv68=
 github.com/datachainlab/ibc-hd-signer v0.1.1/go.mod h1:I1pas5LB8QupngqT05/h3u1nqhHww9OOnAwliuPEd3c=
 github.com/davecgh/go-spew v0.0.0-20171005155431-ecdeabc65495/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
@@ -1181,6 +1179,8 @@ github.com/xiang90/probing v0.0.0-20190116061207-43a291ad63a2/go.mod h1:UETIi67q
 github.com/xordataexchange/crypt v0.0.3-0.20170626215501-b2862e3d0a77/go.mod h1:aYKd//L2LvnjZzWKhF00oedf4jCCReLcmhLdhm1A27Q=
 github.com/xrash/smetrics v0.0.0-20201216005158-039620a65673 h1:bAn7/zixMGCfxrRTfdpNzjtPYqr8smhKouy9mxVdGPU=
 github.com/xrash/smetrics v0.0.0-20201216005158-039620a65673/go.mod h1:N3UwUGtsrSj3ccvlPHLoLsHnpR27oXr4ZE984MbSER8=
+github.com/yoshidan/ethereum-ibc-relay-prover v0.0.0-20250116105334-de5af0cb1cec h1:ftm2ur3uJtXy89nx1dEOHrJhNS+8s+u0OlV09QnvvKA=
+github.com/yoshidan/ethereum-ibc-relay-prover v0.0.0-20250116105334-de5af0cb1cec/go.mod h1:3GRE2JnWyKGyPYswwMpldOdlGDE2hry4ymTPGXY2SHg=
 github.com/yuin/goldmark v1.1.25/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.1.27/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.1.32/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
