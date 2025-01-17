@@ -37,13 +37,18 @@ func (pr *Prover) GetLatestFinalizedHeader() (latestFinalizedHeader core.Header,
 	if err != nil {
 		return nil, err
 	}
-
-	l1Header, err := pr.l1Client.GetLatestFinalizedL1Header()
-	if err != nil {
-		return nil, err
-	}
-	if derivation.L1.Number > l1Header.ExecutionUpdate.BlockNumber {
-		return nil, errors.Errorf("l1 finalized block is behind l2: l1=%d, l2=%d", l1Header.ExecutionUpdate.BlockNumber, derivation.L1.Number)
+	var l1Header *types3.L1Header
+	for {
+		l1Header, err = pr.l1Client.GetLatestFinalizedL1Header()
+		if err != nil {
+			return nil, err
+		}
+		// Must be finalized
+		if l1Header.ExecutionUpdate.BlockNumber >= derivation.L1.Number {
+			break
+		}
+		pr.GetLogger().Info("waiting for L1 finalization", "sync-status-l1", derivation.L1.Number, "finalized-l1", l1Header.ExecutionUpdate.BlockNumber)
+		time.Sleep(2 * time.Second)
 	}
 
 	accountUpdate, err := pr.l2Client.BuildAccountUpdate(derivation.L2.L2BlockNumber)
