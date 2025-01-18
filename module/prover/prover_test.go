@@ -78,7 +78,7 @@ func (ts *ProverTestSuite) SetupTest() {
 	l1ExecutionEndpoint := "http://localhost:8545"
 	l1BeaconEndpoint := "http://localhost:5052"
 	preimageMakerEndpoint := "http://localhost:10080"
-	preimageMakerTimeout := 240 * time.Second
+	preimageMakerTimeout := 300 * time.Second
 	l1Client, err := l1.NewL1Client(context.Background(), l1BeaconEndpoint, l1ExecutionEndpoint)
 	ts.Require().NoError(err)
 	l2Client := l2.NewL2Client(l2Chain, l1ExecutionEndpoint, preimageMakerTimeout, preimageMakerEndpoint, opNodeEndpoint)
@@ -110,7 +110,7 @@ func (ts *ProverTestSuite) TestSetupHeadersForUpdate() {
 	h := header.(*types2.Header)
 
 	// client state
-	trustedHeight := clienttypes.NewHeight(0, header.GetHeight().GetRevisionHeight()-10)
+	trustedHeight := clienttypes.NewHeight(0, header.GetHeight().GetRevisionHeight()-100)
 	cs := &types2.ClientState{
 		LatestHeight: &trustedHeight,
 	}

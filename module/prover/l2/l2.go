@@ -23,8 +23,9 @@ import (
 var IBCCommitmentsSlot = common.HexToHash("1ee222554989dda120e26ecacf756fe1235cd8d726706b57517715dde4f0c900")
 
 type L2Derivation struct {
-	L1 L1BlockRef
-	L2 types.Derivation
+	L1Head   L1BlockRef
+	L2       types.Derivation
+	L1Origin BlockID
 }
 
 type L2Client struct {
@@ -88,21 +89,23 @@ func (c *L2Client) LatestDerivation(ctx context.Context) (*L2Derivation, error) 
 	}
 
 	return &L2Derivation{
-		L1: syncStatus.FinalizedL1,
+		L1Head: syncStatus.FinalizedL1,
 		L2: types.Derivation{
 			AgreedL2HeadHash:   agreedOutput.BlockRef.Hash.Bytes(),
 			AgreedL2OutputRoot: agreedOutput.OutputRoot[:],
 			L2HeadHash:         finalized.Hash.Bytes(),
 			L2OutputRoot:       targetOutput.OutputRoot[:],
 			L2BlockNumber:      targetNumber,
-		}}, nil
+		},
+		L1Origin: finalized.L1Origin,
+	}, nil
 
 }
 
 // SetupDerivations sets up a list of derivations between the trusted height and the latest agreed number.
 // It iterates from the trusted height to the latest agreed number, fetching the agreed and claimed outputs
 // for each block and appending them to the derivations list.
-func (c *L2Client) SetupDerivations(ctx context.Context, trustedHeight uint64, latestAgreedNumber uint64, latestFinalizedL1Number uint64) ([]*L2Derivation, error) {
+func (c *L2Client) SetupDerivations(ctx context.Context, trustedHeight uint64, latestAgreedNumber uint64, finalizedL1s []*lctypes.ExecutionUpdate) ([]*L2Derivation, error) {
 	derivations := make([]*L2Derivation, 0)
 	for i := trustedHeight; i < latestAgreedNumber; i++ {
 		agreedNumber := i
@@ -116,16 +119,11 @@ func (c *L2Client) SetupDerivations(ctx context.Context, trustedHeight uint64, l
 			return nil, errors.WithStack(err)
 		}
 		// use threshold number inorder to reduce derivation latency
-		l1Number := latestFinalizedL1Number
-		header, err := c.l1ExecutionClient.HeaderByNumber(ctx, big.NewInt(0).SetUint64(l1Number))
-		if err != nil {
-			return nil, errors.WithStack(err)
-		}
-
+		nearestOrLatestExecution := c.getNearestL1HeadOrLatest(claimedOutput.BlockRef.L1Origin.Number, finalizedL1s)
 		derivations = append(derivations, &L2Derivation{
-			L1: L1BlockRef{
-				Hash:   header.Hash(),
-				Number: l1Number,
+			L1Head: L1BlockRef{
+				Hash:   common.BytesToHash(nearestOrLatestExecution.BlockHash),
+				Number: nearestOrLatestExecution.BlockNumber,
 			},
 			L2: types.Derivation{
 				AgreedL2HeadHash:   agreedOutput.BlockRef.Hash.Bytes(),
@@ -134,9 +132,21 @@ func (c *L2Client) SetupDerivations(ctx context.Context, trustedHeight uint64, l
 				L2OutputRoot:       claimedOutput.OutputRoot[:],
 				L2BlockNumber:      claimedNumber,
 			},
+			L1Origin: claimedOutput.BlockRef.L1Origin,
 		})
 	}
 	return derivations, nil
+}
+func (c *L2Client) getNearestL1HeadOrLatest(l1OriginBlockNumber uint64, candidates []*lctypes.ExecutionUpdate) *lctypes.ExecutionUpdate {
+	//TODO configuraion
+	const threshold = 10
+	target := l1OriginBlockNumber + threshold
+	for _, candidate := range candidates {
+		if candidate.BlockNumber >= target {
+			return candidate
+		}
+	}
+	return candidates[len(candidates)-1]
 }
 
 // CreatePreimages sends a list of derivations to the preimage maker service and returns the preimage data.
@@ -155,8 +165,14 @@ func (c *L2Client) CreatePreimages(ctx context.Context, derivations []*L2Derivat
 	}
 	rawDerivations := make([]rawType, 0)
 	for _, derivation := range derivations {
+		number := min(derivation.L1Origin.Number+10, derivation.L1Head.Number)
+		l1, err := c.l1ExecutionClient.HeaderByNumber(ctx, big.NewInt(0).SetUint64(number))
+		if err != nil {
+			return nil, err
+		}
 		rawDerivations = append(rawDerivations, rawType{
-			L1HeadHash:         derivation.L1.Hash,
+			//L1HeadHash:         derivation.L1Head.Hash,
+			L1HeadHash:         l1.Hash(),
 			AgreedL2HeadHash:   common.BytesToHash(derivation.L2.AgreedL2HeadHash),
 			AgreedL2OutputRoot: common.BytesToHash(derivation.L2.AgreedL2OutputRoot),
 			L2HeadHash:         common.BytesToHash(derivation.L2.L2HeadHash),

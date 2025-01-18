@@ -44,10 +44,10 @@ func (pr *Prover) GetLatestFinalizedHeader() (latestFinalizedHeader core.Header,
 			return nil, err
 		}
 		// Must be finalized
-		if l1Header.ExecutionUpdate.BlockNumber >= derivation.L1.Number {
+		if l1Header.ExecutionUpdate.BlockNumber >= derivation.L1Head.Number {
 			break
 		}
-		pr.GetLogger().Info("waiting for L1 finalization", "sync-status-l1", derivation.L1.Number, "finalized-l1", l1Header.ExecutionUpdate.BlockNumber)
+		pr.GetLogger().Info("waiting for L1 finalization", "sync-status-l1", derivation.L1Head.Number, "finalized-l1", l1Header.ExecutionUpdate.BlockNumber)
 		time.Sleep(2 * time.Second)
 	}
 
@@ -64,13 +64,14 @@ func (pr *Prover) GetLatestFinalizedHeader() (latestFinalizedHeader core.Header,
 }
 
 func (pr *Prover) SetupHeadersForUpdate(counterparty core.FinalityAwareChain, latestFinalizedHeader core.Header) ([]core.Header, error) {
+	ctx := context.Background()
 	header := latestFinalizedHeader.(*types3.Header)
-	// LCP doesn't need height / EVM needs latest height
+
 	latestHeightOnDstChain, err := counterparty.LatestHeight()
 	if err != nil {
 		return nil, err
 	}
-	csRes, err := counterparty.QueryClientState(core.NewQueryContext(context.TODO(), latestHeightOnDstChain))
+	csRes, err := counterparty.QueryClientState(core.NewQueryContext(ctx, latestHeightOnDstChain))
 	if err != nil {
 		return nil, fmt.Errorf("no client state found : SetupHeadersForUpdate: height = %d, %+v", latestHeightOnDstChain.GetRevisionHeight(), err)
 	}
@@ -79,29 +80,7 @@ func (pr *Prover) SetupHeadersForUpdate(counterparty core.FinalityAwareChain, la
 		return nil, err
 	}
 
-	// Add derivations from latest finalized to trusted height
-	ctx := context.Background()
-	trustedHeight := cs.GetLatestHeight()
-	last := header.Derivations[len(header.Derivations)-1]
-	lastAgreedNumber := last.L2BlockNumber - 1
-	derivations, err := pr.l2Client.SetupDerivations(ctx, trustedHeight.GetRevisionHeight(), lastAgreedNumber, header.L1Head.ExecutionUpdate.BlockNumber)
-	if err != nil {
-		return nil, err
-	}
-	for _, derivation := range derivations {
-		pr.GetLogger().Debug("target derivation ", "l2", derivation.L2.L2BlockNumber, "l1", derivation.L1.Number, "finalized_l1", header.L1Head.ExecutionUpdate.BlockNumber)
-	}
-	// Create preimage data for all derivations
-	preimages, err := pr.l2Client.CreatePreimages(ctx, derivations)
-	if err != nil {
-		return nil, err
-	}
-	for _, derivation := range derivations {
-		header.Derivations = append(header.Derivations, &derivation.L2)
-	}
-	header.Preimages = preimages
-
-	// Set L1 trusted sync committee
+	// Set L1 trusted sync committees
 	consStateRes, err := counterparty.QueryClientConsensusState(core.NewQueryContext(ctx, latestHeightOnDstChain), cs.GetLatestHeight())
 	if err != nil {
 		return nil, errors.WithStack(err)
@@ -115,6 +94,33 @@ func (pr *Prover) SetupHeadersForUpdate(counterparty core.FinalityAwareChain, la
 	if err != nil {
 		return nil, err
 	}
+
+	// Add derivations from latest finalized to trusted height
+	finalizedExecutionUpdates := make([]*types2.ExecutionUpdate, len(l1HeadersToUpdateSyncCommittee))
+	for i, l1Header := range l1HeadersToUpdateSyncCommittee {
+		finalizedExecutionUpdates[i] = l1Header.ExecutionUpdate
+	}
+	finalizedExecutionUpdates = append(finalizedExecutionUpdates, header.L1Head.ExecutionUpdate)
+	trustedHeight := cs.GetLatestHeight()
+	last := header.Derivations[len(header.Derivations)-1]
+	lastAgreedNumber := last.L2BlockNumber - 1
+	derivations, err := pr.l2Client.SetupDerivations(ctx, trustedHeight.GetRevisionHeight(), lastAgreedNumber, finalizedExecutionUpdates)
+	if err != nil {
+		return nil, err
+	}
+	for _, derivation := range derivations {
+		pr.GetLogger().Debug("target derivation ", "l2", derivation.L2.L2BlockNumber, "l1", derivation.L1Head.Number, "latest_l1", header.L1Head.ExecutionUpdate.BlockNumber)
+	}
+	// Create preimage data for all derivations
+	preimages, err := pr.l2Client.CreatePreimages(ctx, derivations)
+	if err != nil {
+		return nil, err
+	}
+	for _, derivation := range derivations {
+		header.Derivations = append(header.Derivations, &derivation.L2)
+	}
+	header.Preimages = preimages
+
 	pr.GetLogger().Info("SetupHeadersForUpdate",
 		"l2", last.L2BlockNumber,
 		"l1", header.L1Head.ExecutionUpdate.BlockNumber,
@@ -125,6 +131,8 @@ func (pr *Prover) SetupHeadersForUpdate(counterparty core.FinalityAwareChain, la
 
 	trusted := clienttypes.NewHeight(trustedHeight.GetRevisionNumber(), trustedHeight.GetRevisionHeight())
 	header.TrustedHeight = &trusted
+
+	//TODO merge header order
 
 	// Only L1 update headers
 	headers := make([]core.Header, len(l1HeadersToUpdateSyncCommittee))
@@ -238,7 +246,7 @@ func (pr *Prover) CreateInitialLightClientState(height ibcexported.Height) (ibce
 
 	latestHeight := util.NewHeight(derivation.L2.L2BlockNumber)
 
-	l1InitialState, err := pr.l1Client.BuildInitialState(derivation.L1.Number)
+	l1InitialState, err := pr.l1Client.BuildInitialState(derivation.L1Head.Number)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -247,7 +255,7 @@ func (pr *Prover) CreateInitialLightClientState(height ibcexported.Height) (ibce
 		return nil, nil, err
 	}
 
-	pr.GetLogger().Info("CreateInitialLightClientState", "l1", derivation.L1.Number, "l2", derivation.L2.L2BlockNumber)
+	pr.GetLogger().Info("CreateInitialLightClientState", "l1", derivation.L1Head.Number, "l2", derivation.L2.L2BlockNumber)
 	clientState := &types3.ClientState{
 		ChainId:            chainID.Uint64(),
 		IbcStoreAddress:    pr.l2Client.Config().IBCAddress().Bytes(),
