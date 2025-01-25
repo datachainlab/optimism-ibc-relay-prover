@@ -148,6 +148,12 @@ func (ts *ProverTestSuite) TestSetupHeadersForUpdate() {
 	h = headers[len(headers)-1].(*types2.Header)
 	ts.Require().True(len(h.Preimages) > 0)
 	ts.Require().True(len(h.Derivations) > 0)
+	for _, e := range headers {
+		downcast := e.(*types2.Header)
+		if len(downcast.Derivations) > 0 {
+			ts.Require().NotNil(downcast.AccountUpdate)
+		}
+	}
 
 	// output l1 header to test in elc
 	protoL1Head, err := h.L1Head.Marshal()
