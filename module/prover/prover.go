@@ -118,31 +118,48 @@ func (pr *Prover) SetupHeadersForUpdate(counterparty core.FinalityAwareChain, la
 	}
 
 	// Merge headers
-	return mergeHeader(
-		clienttypes.NewHeight(trustedHeight.GetRevisionNumber(), trustedHeight.GetRevisionHeight()),
+	updatingHeaders := mergeHeader(
+		trustedHeight,
 		latest,
 		l1HeadersToUpdateSyncCommittee,
 		derivations,
-		preimages), nil
+		preimages)
+
+	for _, e := range updatingHeaders {
+		header := e.(*types3.Header)
+		pr.GetLogger().Info("l1 header", "l1", header.L1Head.ExecutionUpdate.BlockNumber, "trusted_l2", header.TrustedHeight.GetRevisionHeight())
+		for _, derivation := range header.Derivations {
+			pr.GetLogger().Info("l2 derivation", "l2", derivation.L2BlockNumber)
+		}
+	}
+
+	return updatingHeaders, nil
 }
 
-func mergeHeader(trustedHeight clienttypes.Height, latest *types3.Header, intermediateL1 []*types3.L1Header, derivations []*l2.L2Derivation, preimages []byte) []core.Header {
+func mergeHeader(trustedHeight ibcexported.Height, latest *types3.Header, intermediateL1 []*types3.L1Header, derivations []*l2.L2Derivation, preimages []byte) []core.Header {
 	updatingL1 := append(intermediateL1, latest.L1Head)
 	headers := make([]core.Header, len(updatingL1))
 
 	// Setup All L1 headers
-	nextTrustedHeight := trustedHeight
+	lastDerivation := trustedHeight.GetRevisionHeight()
+	remains := derivations
 	for i, l1Header := range updatingL1 {
+		lastTrustedHeight := clienttypes.NewHeight(trustedHeight.GetRevisionNumber(), lastDerivation)
 		targetHeader := &types3.Header{
-			TrustedHeight: &nextTrustedHeight,
+			TrustedHeight: &lastTrustedHeight,
 			L1Head:        l1Header,
 			Preimages:     preimages,
 		}
 		// Add L2 Derivation
-		for _, derivation := range derivations {
+		target := remains
+		remains = nil
+		for _, derivation := range target {
 			if l1Header.ExecutionUpdate.BlockNumber == derivation.L1Head.Number {
 				targetHeader.Derivations = append(targetHeader.Derivations, &derivation.L2)
-				nextTrustedHeight = clienttypes.NewHeight(nextTrustedHeight.RevisionNumber, derivation.L2.L2BlockNumber)
+				lastDerivation = derivation.L2.L2BlockNumber
+			} else {
+				// remaining
+				remains = append(remains, derivation)
 			}
 		}
 		if len(targetHeader.Derivations) > 0 {
