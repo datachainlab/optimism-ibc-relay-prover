@@ -181,6 +181,69 @@ func (ts *ProverTestSuite) TestSetupHeadersForUpdate() {
 	fmt.Println(common.Bytes2Hex(consState.L1NextSyncCommittee))
 }
 
+func (ts *ProverTestSuite) TestMergeHeader() {
+	trustedHeight := clienttypes.NewHeight(0, 100)
+	trustedL1 := 100
+	latest := &types2.Header{
+		L1Head: &types2.L1Header{
+			ExecutionUpdate: &types.ExecutionUpdate{
+				BlockNumber: 110,
+			},
+		},
+		Derivations: []*types2.Derivation{{
+			L2BlockNumber: 110,
+		}},
+	}
+
+	intermediateL1 := make([]*types2.L1Header, latest.L1Head.ExecutionUpdate.BlockNumber-uint64(trustedL1)-1)
+	for i := 0; i < len(intermediateL1); i++ {
+		intermediateL1[i] = &types2.L1Header{
+			ExecutionUpdate: &types.ExecutionUpdate{
+				BlockNumber: uint64(trustedL1 + i + 1),
+			},
+		}
+	}
+
+	// 1 : 1
+	intermediateL2 := make([]*l2.L2Derivation, latest.Derivations[0].L2BlockNumber-trustedHeight.GetRevisionHeight()-1)
+	for i := range intermediateL2 {
+		intermediateL2[i] = &l2.L2Derivation{
+			L1Head: l2.L1BlockRef{
+				Number: intermediateL1[i].ExecutionUpdate.BlockNumber,
+			},
+			L2: types2.Derivation{
+				L2BlockNumber: trustedHeight.GetRevisionHeight() + uint64(i+1),
+			},
+		}
+	}
+	headers := mergeHeader(trustedHeight, latest, intermediateL1, intermediateL2, nil)
+	ts.Require().Len(headers, len(intermediateL1)+1)
+	for _, h := range headers {
+		header := h.(*types2.Header)
+		ts.Require().Len(header.Derivations, 1)
+	}
+
+	// latest only
+	intermediateL2 = make([]*l2.L2Derivation, latest.Derivations[0].L2BlockNumber-trustedHeight.GetRevisionHeight()-1)
+	for i := range intermediateL2 {
+		intermediateL2[i] = &l2.L2Derivation{
+			L1Head: l2.L1BlockRef{
+				Number: latest.L1Head.ExecutionUpdate.BlockNumber,
+			},
+			L2: types2.Derivation{
+				L2BlockNumber: trustedHeight.GetRevisionHeight() + uint64(i+1),
+			},
+		}
+	}
+	headers = mergeHeader(trustedHeight, latest, intermediateL1, intermediateL2, nil)
+	ts.Require().Len(headers, len(intermediateL1)+1)
+	for _, h := range headers[:len(headers)-1] {
+		header := h.(*types2.Header)
+		ts.Require().Len(header.Derivations, 0)
+	}
+	ts.Require().Len(headers[len(headers)-1].(*types2.Header).Derivations, len(intermediateL2)+1) // latest contains all
+}
+
 type mockChain struct {
 	*ethereum.Chain
 	mockLatestHeader core.Header
