@@ -242,6 +242,28 @@ func (ts *ProverTestSuite) TestMergeHeader() {
 		ts.Require().Len(header.Derivations, 0)
 	}
 	ts.Require().Len(headers[len(headers)-1].(*types2.Header).Derivations, len(intermediateL2)+1) // latest contains all
+
+	// first only
+	intermediateL2 = make([]*l2.L2Derivation, latest.Derivations[0].L2BlockNumber-trustedHeight.GetRevisionHeight()-1)
+	for i := range intermediateL2 {
+		intermediateL2[i] = &l2.L2Derivation{
+			L1Head: l2.L1BlockRef{
+				Number: intermediateL1[0].ExecutionUpdate.BlockNumber,
+			},
+			L2: types2.Derivation{
+				L2BlockNumber: trustedHeight.GetRevisionHeight() + uint64(i+1),
+			},
+		}
+	}
+	headers = mergeHeader(trustedHeight, latest, intermediateL1, intermediateL2, nil)
+	ts.Require().Len(headers, len(intermediateL1)+1)
+	for _, h := range headers[1 : len(headers)-1] {
+		header := h.(*types2.Header)
+		ts.Require().Len(header.Derivations, 0)
+	}
+	ts.Require().Len(headers[0].(*types2.Header).Derivations, len(intermediateL2))
+	ts.Require().Len(headers[len(headers)-1].(*types2.Header).Derivations, 1)
+
 }
 
 type mockChain struct {
