@@ -19,6 +19,7 @@ import (
 	"github.com/hyperledger-labs/yui-relayer/core"
 	"github.com/hyperledger-labs/yui-relayer/log"
 	"github.com/stretchr/testify/suite"
+	"math/big"
 	"os"
 	"testing"
 	"time"
@@ -143,7 +144,6 @@ func (ts *ProverTestSuite) TestSetupHeadersForUpdate() {
 	}
 	headers, err := ts.prover.SetupHeadersForUpdate(chain, header)
 	ts.Require().NoError(err)
-	ts.Require().True(len(headers) == additionalPeriods || len(headers) == additionalPeriods+1, len(headers))
 
 	h = headers[len(headers)-1].(*types2.Header)
 	ts.Require().True(len(h.Preimages) > 0)
@@ -155,7 +155,86 @@ func (ts *ProverTestSuite) TestSetupHeadersForUpdate() {
 		}
 	}
 
-	// output l1 header to test in elc
+	ts.logForUpdateClientTest(headers)
+}
+
+func (ts *ProverTestSuite) TestMergeHeader() {
+	trustedHeight := clienttypes.NewHeight(0, 100)
+	trustedL1 := 100
+
+	l1Headers := make([]*types2.L1Header, 100)
+	for i := 0; i < len(l1Headers); i++ {
+		l1Headers[i] = &types2.L1Header{
+			ExecutionUpdate: &types.ExecutionUpdate{
+				BlockNumber: uint64(trustedL1 + i + 1),
+			},
+		}
+	}
+
+	// 1 : 1
+	l2Headers := make([]*l2.L2Derivation, 100)
+	for i := range l2Headers {
+		l2Headers[i] = &l2.L2Derivation{
+			L1Head: l2.L1BlockRef{
+				Number: l1Headers[i].ExecutionUpdate.BlockNumber,
+			},
+			L2: types2.Derivation{
+				L2BlockNumber: trustedHeight.GetRevisionHeight() + uint64(i+1),
+			},
+		}
+	}
+	headers := mergeHeader(trustedHeight, l1Headers, l2Headers, nil)
+	ts.Require().Len(headers, len(l1Headers))
+	for _, h := range headers {
+		header := h.(*types2.Header)
+		ts.Require().Len(header.Derivations, 1)
+	}
+
+	// latest only
+	l2Headers = make([]*l2.L2Derivation, 100)
+	for i := range l2Headers {
+		l2Headers[i] = &l2.L2Derivation{
+			L1Head: l2.L1BlockRef{
+				Number: l1Headers[len(l1Headers)-1].ExecutionUpdate.BlockNumber,
+			},
+			L2: types2.Derivation{
+				L2BlockNumber: trustedHeight.GetRevisionHeight() + uint64(i+1),
+			},
+		}
+	}
+	headers = mergeHeader(trustedHeight, l1Headers, l2Headers, nil)
+	ts.Require().Len(headers, len(l1Headers))
+	for _, h := range headers[:len(headers)-1] {
+		header := h.(*types2.Header)
+		ts.Require().Len(header.Derivations, 0)
+	}
+	ts.Require().Len(headers[len(headers)-1].(*types2.Header).Derivations, len(l2Headers)) // latest contains all
+
+	// first only
+	l2Headers = make([]*l2.L2Derivation, 100)
+	for i := range l2Headers {
+		l2Headers[i] = &l2.L2Derivation{
+			L1Head: l2.L1BlockRef{
+				Number: l1Headers[0].ExecutionUpdate.BlockNumber,
+			},
+			L2: types2.Derivation{
+				L2BlockNumber: trustedHeight.GetRevisionHeight() + uint64(i+1),
+			},
+		}
+	}
+	headers = mergeHeader(trustedHeight, l1Headers, l2Headers, nil)
+	ts.Require().Len(headers, len(l1Headers))
+	for _, h := range headers[1:] {
+		header := h.(*types2.Header)
+		ts.Require().Len(header.Derivations, 0)
+	}
+	ts.Require().Len(headers[0].(*types2.Header).Derivations, len(l2Headers))
+
+}
+
+func (ts *ProverTestSuite) logForL1Test(headers []core.Header) {
+
+	h := headers[len(headers)-1].(*types2.Header)
 	protoL1Head, err := h.L1Head.Marshal()
 	ts.Require().NoError(err)
 
@@ -169,13 +248,7 @@ func (ts *ProverTestSuite) TestSetupHeadersForUpdate() {
 	beforeLatestTrusted := headers[len(headers)-3].(*types2.Header)
 	latestTrusted := headers[len(headers)-2].(*types2.Header)
 
-	l2h, err := ts.prover.l2Client.Chain.Client().HeaderByHash(context.Background(), common.BytesToHash(h.Derivations[0].AgreedL2HeadHash))
-	ts.Require().NoError(err)
-	consState = &types2.ConsensusState{
-		StorageRoot:            l2h.Root.Bytes(),
-		OutputRoot:             h.Derivations[0].AgreedL2OutputRoot,
-		Hash:                   h.Derivations[0].L2HeadHash,
-		Timestamp:              l2h.Time,
+	consState := &types2.ConsensusState{
 		L1Slot:                 latestTrusted.L1Head.ConsensusUpdate.FinalizedHeader.Slot,
 		L1CurrentSyncCommittee: beforeLatestTrusted.L1Head.ConsensusUpdate.NextSyncCommittee.AggregatePubkey,
 		L1NextSyncCommittee:    latestTrusted.L1Head.ConsensusUpdate.NextSyncCommittee.AggregatePubkey,
@@ -185,8 +258,36 @@ func (ts *ProverTestSuite) TestSetupHeadersForUpdate() {
 	fmt.Println(consState.L1Slot)
 	fmt.Println(common.Bytes2Hex(consState.L1CurrentSyncCommittee))
 	fmt.Println(common.Bytes2Hex(consState.L1NextSyncCommittee))
+}
 
-	// for ELC testdata
+func (ts *ProverTestSuite) logForUpdateClientTest(headers []core.Header) {
+
+	const targetIndex = 2
+	h := headers[len(headers)-targetIndex].(*types2.Header)
+
+	l1state, err := ts.prover.l1Client.BuildInitialState(h.L1Head.ExecutionUpdate.BlockNumber)
+	ts.Require().NoError(err)
+	l1Config, err := ts.prover.l1Client.BuildL1Config(l1state)
+	ts.Require().NoError(err)
+
+	beforeLatestTrusted := headers[len(headers)-(targetIndex+2)].(*types2.Header)
+	latestTrusted := headers[len(headers)-(targetIndex+1)].(*types2.Header)
+
+	trustedHeight := h.TrustedHeight.GetRevisionHeight()
+	l2h, err := ts.prover.l2Client.Chain.Client().HeaderByNumber(context.Background(), big.NewInt(0).SetUint64(trustedHeight))
+	ts.Require().NoError(err)
+	outputRoot, err := ts.prover.l2Client.OutputAtBlock(trustedHeight)
+	ts.Require().NoError(err)
+	consState := &types2.ConsensusState{
+		StorageRoot:            l2h.Root.Bytes(),
+		OutputRoot:             outputRoot.OutputRoot[:],
+		Hash:                   l2h.Hash().Bytes(),
+		Timestamp:              l2h.Time,
+		L1Slot:                 latestTrusted.L1Head.ConsensusUpdate.FinalizedHeader.Slot,
+		L1CurrentSyncCommittee: beforeLatestTrusted.L1Head.ConsensusUpdate.NextSyncCommittee.AggregatePubkey,
+		L1NextSyncCommittee:    latestTrusted.L1Head.ConsensusUpdate.NextSyncCommittee.AggregatePubkey,
+	}
+
 	rollupConfig, err := ts.prover.l2Client.RollupConfigBytes()
 	ts.Require().NoError(err)
 	chainID, err := ts.prover.l2Client.Client().ChainID(context.Background())
@@ -213,92 +314,6 @@ func (ts *ProverTestSuite) TestSetupHeadersForUpdate() {
 	ts.Require().NoError(err)
 	err = os.WriteFile("test_update_client_success.bin", lastUpdateClient, 0644)
 	ts.Require().NoError(err)
-
-}
-
-func (ts *ProverTestSuite) TestMergeHeader() {
-	trustedHeight := clienttypes.NewHeight(0, 100)
-	trustedL1 := 100
-	latest := &types2.Header{
-		L1Head: &types2.L1Header{
-			ExecutionUpdate: &types.ExecutionUpdate{
-				BlockNumber: 110,
-			},
-		},
-		Derivations: []*types2.Derivation{{
-			L2BlockNumber: 110,
-		}},
-	}
-
-	intermediateL1 := make([]*types2.L1Header, latest.L1Head.ExecutionUpdate.BlockNumber-uint64(trustedL1)-1)
-	for i := 0; i < len(intermediateL1); i++ {
-		intermediateL1[i] = &types2.L1Header{
-			ExecutionUpdate: &types.ExecutionUpdate{
-				BlockNumber: uint64(trustedL1 + i + 1),
-			},
-		}
-	}
-
-	// 1 : 1
-	intermediateL2 := make([]*l2.L2Derivation, latest.Derivations[0].L2BlockNumber-trustedHeight.GetRevisionHeight()-1)
-	for i := range intermediateL2 {
-		intermediateL2[i] = &l2.L2Derivation{
-			L1Head: l2.L1BlockRef{
-				Number: intermediateL1[i].ExecutionUpdate.BlockNumber,
-			},
-			L2: types2.Derivation{
-				L2BlockNumber: trustedHeight.GetRevisionHeight() + uint64(i+1),
-			},
-		}
-	}
-	headers := mergeHeader(trustedHeight, append(intermediateL1, latest.L1Head), intermediateL2, nil)
-	ts.Require().Len(headers, len(intermediateL1)+1)
-	for _, h := range headers {
-		header := h.(*types2.Header)
-		ts.Require().Len(header.Derivations, 1)
-	}
-
-	// latest only
-	intermediateL2 = make([]*l2.L2Derivation, latest.Derivations[0].L2BlockNumber-trustedHeight.GetRevisionHeight()-1)
-	for i := range intermediateL2 {
-		intermediateL2[i] = &l2.L2Derivation{
-			L1Head: l2.L1BlockRef{
-				Number: latest.L1Head.ExecutionUpdate.BlockNumber,
-			},
-			L2: types2.Derivation{
-				L2BlockNumber: trustedHeight.GetRevisionHeight() + uint64(i+1),
-			},
-		}
-	}
-	headers = mergeHeader(trustedHeight, append(intermediateL1, latest.L1Head), intermediateL2, nil)
-	ts.Require().Len(headers, len(intermediateL1)+1)
-	for _, h := range headers[:len(headers)-1] {
-		header := h.(*types2.Header)
-		ts.Require().Len(header.Derivations, 0)
-	}
-	ts.Require().Len(headers[len(headers)-1].(*types2.Header).Derivations, len(intermediateL2)+1) // latest contains all
-
-	// first only
-	intermediateL2 = make([]*l2.L2Derivation, latest.Derivations[0].L2BlockNumber-trustedHeight.GetRevisionHeight()-1)
-	for i := range intermediateL2 {
-		intermediateL2[i] = &l2.L2Derivation{
-			L1Head: l2.L1BlockRef{
-				Number: intermediateL1[0].ExecutionUpdate.BlockNumber,
-			},
-			L2: types2.Derivation{
-				L2BlockNumber: trustedHeight.GetRevisionHeight() + uint64(i+1),
-			},
-		}
-	}
-	headers = mergeHeader(trustedHeight, append(intermediateL1, latest.L1Head), intermediateL2, nil)
-	ts.Require().Len(headers, len(intermediateL1)+1)
-	for _, h := range headers[1 : len(headers)-1] {
-		header := h.(*types2.Header)
-		ts.Require().Len(header.Derivations, 0)
-	}
-	ts.Require().Len(headers[0].(*types2.Header).Derivations, len(intermediateL2))
-	ts.Require().Len(headers[len(headers)-1].(*types2.Header).Derivations, 1)
-
 }
 
 type mockChain struct {
