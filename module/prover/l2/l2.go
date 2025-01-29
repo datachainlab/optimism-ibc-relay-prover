@@ -107,7 +107,7 @@ func (c *L2Client) LatestDerivation(ctx context.Context) (*L2Derivation, error) 
 // for each block and appending them to the derivations list.
 func (c *L2Client) SetupDerivations(ctx context.Context, trustedHeight uint64, latestAgreedNumber uint64, finalizedL1s []*lctypes.ExecutionUpdate) ([]*L2Derivation, error) {
 	derivations := make([]*L2Derivation, 0)
-	for i := trustedHeight; i < latestAgreedNumber; i++ {
+	for i := trustedHeight; i <= latestAgreedNumber; i++ {
 		agreedNumber := i
 		agreedOutput, err := c.OutputAtBlock(agreedNumber)
 		if err != nil {

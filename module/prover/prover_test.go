@@ -13,6 +13,7 @@ import (
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l1"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l2"
 	types2 "github.com/datachainlab/optimism-ibc-relay-prover/module/types"
+	"github.com/datachainlab/optimism-ibc-relay-prover/module/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/hyperledger-labs/yui-relayer/config"
 	"github.com/hyperledger-labs/yui-relayer/core"
@@ -110,7 +111,7 @@ func (ts *ProverTestSuite) TestSetupHeadersForUpdate() {
 	h := header.(*types2.Header)
 
 	// client state
-	trustedHeight := clienttypes.NewHeight(0, header.GetHeight().GetRevisionHeight()-100)
+	trustedHeight := clienttypes.NewHeight(0, header.GetHeight().GetRevisionHeight()-10)
 	cs := &types2.ClientState{
 		LatestHeight: &trustedHeight,
 	}
@@ -142,9 +143,8 @@ func (ts *ProverTestSuite) TestSetupHeadersForUpdate() {
 	}
 	headers, err := ts.prover.SetupHeadersForUpdate(chain, header)
 	ts.Require().NoError(err)
-	ts.Require().True(len(headers) == additionalPeriods+1 || len(headers) == additionalPeriods+1+1, len(headers))
+	ts.Require().True(len(headers) == additionalPeriods || len(headers) == additionalPeriods+1, len(headers))
 
-	// Only the last header contains L2 derivation
 	h = headers[len(headers)-1].(*types2.Header)
 	ts.Require().True(len(h.Preimages) > 0)
 	ts.Require().True(len(h.Derivations) > 0)
@@ -169,7 +169,13 @@ func (ts *ProverTestSuite) TestSetupHeadersForUpdate() {
 	beforeLatestTrusted := headers[len(headers)-3].(*types2.Header)
 	latestTrusted := headers[len(headers)-2].(*types2.Header)
 
+	l2h, err := ts.prover.l2Client.Chain.Client().HeaderByHash(context.Background(), common.BytesToHash(h.Derivations[0].AgreedL2HeadHash))
+	ts.Require().NoError(err)
 	consState = &types2.ConsensusState{
+		StorageRoot:            l2h.Root.Bytes(),
+		OutputRoot:             h.Derivations[0].AgreedL2OutputRoot,
+		Hash:                   h.Derivations[0].L2HeadHash,
+		Timestamp:              l2h.Time,
 		L1Slot:                 latestTrusted.L1Head.ConsensusUpdate.FinalizedHeader.Slot,
 		L1CurrentSyncCommittee: beforeLatestTrusted.L1Head.ConsensusUpdate.NextSyncCommittee.AggregatePubkey,
 		L1NextSyncCommittee:    latestTrusted.L1Head.ConsensusUpdate.NextSyncCommittee.AggregatePubkey,
@@ -179,6 +185,35 @@ func (ts *ProverTestSuite) TestSetupHeadersForUpdate() {
 	fmt.Println(consState.L1Slot)
 	fmt.Println(common.Bytes2Hex(consState.L1CurrentSyncCommittee))
 	fmt.Println(common.Bytes2Hex(consState.L1NextSyncCommittee))
+
+	// for ELC testdata
+	rollupConfig, err := ts.prover.l2Client.RollupConfigBytes()
+	ts.Require().NoError(err)
+	chainID, err := ts.prover.l2Client.Client().ChainID(context.Background())
+	ts.Require().NoError(err)
+	clientState := &types2.ClientState{
+		ChainId:            chainID.Uint64(),
+		IbcStoreAddress:    ts.prover.l2Client.Config().IBCAddress().Bytes(),
+		IbcCommitmentsSlot: l2.IBCCommitmentsSlot[:],
+		LatestHeight:       util.NewHeight(l2h.Number.Uint64()),
+		TrustingPeriod:     86400 * time.Second,
+		MaxClockDrift:      10 * time.Second,
+		Frozen:             false,
+		RollupConfigJson:   rollupConfig,
+		L1Config:           l1Config,
+	}
+	fmt.Println(l2h.Number.String())
+	csMarshal, err := clientState.Marshal()
+	ts.Require().NoError(err)
+	fmt.Println(common.Bytes2Hex(csMarshal))
+	consMarshal, err := consState.Marshal()
+	ts.Require().NoError(err)
+	fmt.Println(common.Bytes2Hex(consMarshal))
+	lastUpdateClient, err := h.Marshal()
+	ts.Require().NoError(err)
+	err = os.WriteFile("test_update_client_success.bin", lastUpdateClient, 0644)
+	ts.Require().NoError(err)
+
 }
 
 func (ts *ProverTestSuite) TestMergeHeader() {
@@ -216,7 +251,7 @@ func (ts *ProverTestSuite) TestMergeHeader() {
 			},
 		}
 	}
-	headers := mergeHeader(trustedHeight, latest, intermediateL1, intermediateL2, nil)
+	headers := mergeHeader(trustedHeight, append(intermediateL1, latest.L1Head), intermediateL2, nil)
 	ts.Require().Len(headers, len(intermediateL1)+1)
 	for _, h := range headers {
 		header := h.(*types2.Header)
@@ -235,7 +270,7 @@ func (ts *ProverTestSuite) TestMergeHeader() {
 			},
 		}
 	}
-	headers = mergeHeader(trustedHeight, latest, intermediateL1, intermediateL2, nil)
+	headers = mergeHeader(trustedHeight, append(intermediateL1, latest.L1Head), intermediateL2, nil)
 	ts.Require().Len(headers, len(intermediateL1)+1)
 	for _, h := range headers[:len(headers)-1] {
 		header := h.(*types2.Header)
@@ -255,7 +290,7 @@ func (ts *ProverTestSuite) TestMergeHeader() {
 			},
 		}
 	}
-	headers = mergeHeader(trustedHeight, latest, intermediateL1, intermediateL2, nil)
+	headers = mergeHeader(trustedHeight, append(intermediateL1, latest.L1Head), intermediateL2, nil)
 	ts.Require().Len(headers, len(intermediateL1)+1)
 	for _, h := range headers[1 : len(headers)-1] {
 		header := h.(*types2.Header)
