@@ -14,6 +14,7 @@ import (
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l2"
 	types3 "github.com/datachainlab/optimism-ibc-relay-prover/module/types"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/util"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/hyperledger-labs/yui-relayer/core"
 	"github.com/hyperledger-labs/yui-relayer/log"
 	"time"
@@ -143,7 +144,22 @@ func (pr *Prover) SetupHeadersForUpdate(counterparty core.FinalityAwareChain, la
 		for i, derivation := range header.Derivations {
 			l2Number[i] = derivation.L2BlockNumber
 		}
-		pr.GetLogger().Info("l1 header", "l1", header.L1Head.ExecutionUpdate.BlockNumber, "trusted_l2", header.TrustedHeight.GetRevisionHeight(), "l2", l2Number)
+
+		toString := func(t *types2.SyncCommittee) string {
+			if t == nil {
+				return ""
+			}
+			return common.Bytes2Hex(t.AggregatePubkey)
+		}
+		pr.GetLogger().Info("l1 header",
+			"l1", header.L1Head.ExecutionUpdate.BlockNumber,
+			"l1-is-next", header.L1Head.TrustedSyncCommittee.IsNext,
+			"l1-t-period", pr.l1Client.ComputeSyncCommitteePeriodBySlot(header.L1Head.ConsensusUpdate.SignatureSlot),
+			"l1-t-comm", toString(header.L1Head.TrustedSyncCommittee.SyncCommittee),
+			"l1-n-comm", toString(header.L1Head.ConsensusUpdate.NextSyncCommittee),
+			"trusted_l2", header.TrustedHeight.GetRevisionHeight(),
+			"l2", l2Number,
+		)
 	}
 
 	return updatingHeaders, nil

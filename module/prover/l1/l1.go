@@ -44,6 +44,10 @@ func (pr *L1Client) BuildL1Config(state *InitialState) (*types.L1Config, error) 
 	}, nil
 }
 
+func (pr *L1Client) ComputeSyncCommitteePeriodBySlot(slot uint64) uint64 {
+	return pr.computeSyncCommitteePeriod(pr.computeEpoch(slot))
+}
+
 func (pr *L1Client) BuildConsensusUpdateAt(blockNumber uint64) (*types.L1Header, error) {
 	timestamp, err := pr.TimestampAt(context.Background(), blockNumber)
 	if err != nil {
@@ -53,7 +57,7 @@ func (pr *L1Client) BuildConsensusUpdateAt(blockNumber uint64) (*types.L1Header,
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute slot at timestamp: %v", err)
 	}
-	period := pr.computeSyncCommitteePeriod(pr.computeEpoch(slot))
+	period := pr.ComputeSyncCommitteePeriodBySlot(slot)
 
 	res, err := pr.beaconClient.GetLightClientUpdate(period)
 	if err != nil {

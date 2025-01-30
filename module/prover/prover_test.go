@@ -155,7 +155,8 @@ func (ts *ProverTestSuite) TestSetupHeadersForUpdate() {
 		}
 	}
 
-	ts.logForUpdateClientTest(headers)
+	ts.logForUpdateClientTest(headers, 1, "test_update_client_success.bin")
+	ts.logForUpdateClientTest(headers, 2, "test_update_client_l1_only_success.bin")
 }
 
 func (ts *ProverTestSuite) TestMergeHeader() {
@@ -260,9 +261,8 @@ func (ts *ProverTestSuite) logForL1Test(headers []core.Header) {
 	fmt.Println(common.Bytes2Hex(consState.L1NextSyncCommittee))
 }
 
-func (ts *ProverTestSuite) logForUpdateClientTest(headers []core.Header) {
+func (ts *ProverTestSuite) logForUpdateClientTest(headers []core.Header, targetIndex int, fileName string) {
 
-	const targetIndex = 2
 	h := headers[len(headers)-targetIndex].(*types2.Header)
 
 	l1state, err := ts.prover.l1Client.BuildInitialState(h.L1Head.ExecutionUpdate.BlockNumber)
@@ -287,6 +287,9 @@ func (ts *ProverTestSuite) logForUpdateClientTest(headers []core.Header) {
 		L1CurrentSyncCommittee: beforeLatestTrusted.L1Head.ConsensusUpdate.NextSyncCommittee.AggregatePubkey,
 		L1NextSyncCommittee:    latestTrusted.L1Head.ConsensusUpdate.NextSyncCommittee.AggregatePubkey,
 	}
+	trustedPeriod := ts.prover.l1Client.ComputeSyncCommitteePeriodBySlot(consState.L1Slot)
+	signaturePeriod := ts.prover.l1Client.ComputeSyncCommitteePeriodBySlot(h.L1Head.ConsensusUpdate.SignatureSlot)
+	fmt.Println(trustedPeriod, signaturePeriod, h.L1Head.TrustedSyncCommittee.IsNext)
 
 	rollupConfig, err := ts.prover.l2Client.RollupConfigBytes()
 	ts.Require().NoError(err)
@@ -312,7 +315,7 @@ func (ts *ProverTestSuite) logForUpdateClientTest(headers []core.Header) {
 	fmt.Println(common.Bytes2Hex(consMarshal))
 	lastUpdateClient, err := h.Marshal()
 	ts.Require().NoError(err)
-	err = os.WriteFile("test_update_client_success.bin", lastUpdateClient, 0644)
+	err = os.WriteFile(fileName, lastUpdateClient, 0644)
 	ts.Require().NoError(err)
 }
 

@@ -28,3 +28,4 @@ tests/contracts/addresses
 tests/contracts/artifacts
 tests/contracts/cache
 **/node_modules
+**.bin
