@@ -325,7 +325,6 @@ func mergeHeader(trustedHeight ibcexported.Height, updatingL1 []*types3.L1Header
 		targetHeader := &types3.Header{
 			TrustedHeight: &lastTrustedHeight,
 			L1Head:        l1Header,
-			Preimages:     preimages,
 		}
 		// Add L2 Derivation
 		target := remains
@@ -338,6 +337,11 @@ func mergeHeader(trustedHeight ibcexported.Height, updatingL1 []*types3.L1Header
 				// remaining
 				remains = append(remains, derivation)
 			}
+		}
+
+		// Needless to add preimages if the header has no derivations
+		if len(targetHeader.Derivations) > 0 {
+			targetHeader.Preimages = preimages
 		}
 
 		headers[i] = targetHeader
