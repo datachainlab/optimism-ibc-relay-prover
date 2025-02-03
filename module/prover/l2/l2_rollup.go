@@ -34,9 +34,6 @@ func (c *L2Client) OutputAtBlock(blockNumber uint64) (*OutputResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err != nil {
-		return nil, err
-	}
 	var outputResponse OutputResponse
 	if err = json.Unmarshal(data, &outputResponse); err != nil {
 		return nil, errors.WithStack(err)
