@@ -10,7 +10,6 @@ import (
 	ibcexported "github.com/cosmos/ibc-go/v8/modules/core/exported"
 	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/relay/ethereum"
 	lctypes "github.com/datachainlab/ethereum-ibc-relay-prover/light-clients/ethereum/types"
-	"github.com/datachainlab/optimism-ibc-relay-prover/module/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -22,10 +21,10 @@ import (
 
 var IBCCommitmentsSlot = common.HexToHash("1ee222554989dda120e26ecacf756fe1235cd8d726706b57517715dde4f0c900")
 
-type L2Derivation struct {
-	L1Head   L1BlockRef
-	L2       types.Derivation
-	L1Origin BlockID
+type LatestDerivation struct {
+	L1Head        L1BlockRef
+	L2OutputRoot  common.Hash
+	L2BlockNumber uint64
 }
 
 type L2Client struct {
@@ -66,7 +65,7 @@ func (c *L2Client) LatestFinalizedHeight() (ibcexported.Height, error) {
 
 // LatestDerivation retrieves the latest derivation information from the rollup client.
 // It fetches the sync status, claimed output, and agreed output for the latest blocks.
-func (c *L2Client) LatestDerivation(ctx context.Context) (*L2Derivation, error) {
+func (c *L2Client) LatestDerivation(ctx context.Context) (*LatestDerivation, error) {
 	syncStatus, err := c.SyncStatus()
 	if err != nil {
 		return nil, errors.WithStack(err)
@@ -82,38 +81,29 @@ func (c *L2Client) LatestDerivation(ctx context.Context) (*L2Derivation, error) 
 		return nil, errors.WithStack(err)
 	}
 
-	return &L2Derivation{
-		L1Head: syncStatus.FinalizedL1,
-		L2: types.Derivation{
-			L2OutputRoot:  targetOutput.OutputRoot[:],
-			L2BlockNumber: targetNumber,
-		},
-		L1Origin: finalized.L1Origin,
+	return &LatestDerivation{
+		L1Head:        syncStatus.FinalizedL1,
+		L2OutputRoot:  common.BytesToHash(targetOutput.OutputRoot[:]),
+		L2BlockNumber: targetNumber,
 	}, nil
 
 }
 
+type PreimageRequest struct {
+	L1HeadHash         common.Hash `json:"l1_head_hash"`
+	AgreedL2HeadHash   common.Hash `json:"agreed_l2_head_hash"`
+	AgreedL2OutputRoot common.Hash `json:"agreed_l2_output_root"`
+	L2OutputRoot       common.Hash `json:"l2_output_root"`
+	L2BlockNumber      uint64      `json:"l2_block_number"`
+}
+
 // CreatePreimages sends a list of derivations to the preimage maker service and returns the preimage data.
 // It marshals the derivations into JSON, sends a POST request to the preimage maker endpoint, and reads the response.
-func (c *L2Client) CreatePreimages(ctx context.Context, l1Head []byte, derivation *types.Derivation, agreedL2HeadHash common.Hash) ([]byte, error) {
+func (c *L2Client) CreatePreimages(ctx context.Context, request *PreimageRequest) ([]byte, error) {
 	httpClient := http.Client{
 		Timeout: c.preimageMakerTimeout,
 	}
-	type rawType struct {
-		L1HeadHash         common.Hash `json:"l1_head_hash"`
-		AgreedL2HeadHash   common.Hash `json:"agreed_l2_head_hash"`
-		AgreedL2OutputRoot common.Hash `json:"agreed_l2_output_root"`
-		L2OutputRoot       common.Hash `json:"l2_output_root"`
-		L2BlockNumber      uint64      `json:"l2_block_number"`
-	}
-	rawDerivation := rawType{
-		L1HeadHash:         common.BytesToHash(l1Head),
-		AgreedL2HeadHash:   agreedL2HeadHash,
-		AgreedL2OutputRoot: common.BytesToHash(derivation.AgreedL2OutputRoot),
-		L2OutputRoot:       common.BytesToHash(derivation.L2OutputRoot),
-		L2BlockNumber:      derivation.L2BlockNumber,
-	}
-	body, err := json.Marshal(rawDerivation)
+	body, err := json.Marshal(request)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}

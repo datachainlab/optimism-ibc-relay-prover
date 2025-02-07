@@ -52,14 +52,17 @@ func (pr *Prover) GetLatestFinalizedHeader() (latestFinalizedHeader core.Header,
 		time.Sleep(2 * time.Second)
 	}
 
-	accountUpdate, err := pr.l2Client.BuildAccountUpdate(derivation.L2.L2BlockNumber)
+	accountUpdate, err := pr.l2Client.BuildAccountUpdate(derivation.L2BlockNumber)
 	if err != nil {
 		return nil, err
 	}
 	header := &types3.Header{
 		AccountUpdate: accountUpdate,
 		L1Head:        l1Header,
-		Derivation:    &derivation.L2,
+		Derivation: &types3.Derivation{
+			L2OutputRoot:  derivation.L2OutputRoot.Bytes(),
+			L2BlockNumber: derivation.L2BlockNumber,
+		},
 	}
 	return header, nil
 }
@@ -104,8 +107,14 @@ func (pr *Prover) SetupHeadersForUpdate(counterparty core.FinalityAwareChain, la
 		return nil, err
 	}
 	latest.Derivation.AgreedL2OutputRoot = agreedOutput.OutputRoot[:]
-	pr.GetLogger().Debug("CreatePreimages", "l1", latest.L1Head.ExecutionUpdate.BlockNumber, "l2", latest.Derivation)
-	preimages, err := pr.l2Client.CreatePreimages(ctx, latest.L1Head.ExecutionUpdate.BlockHash, latest.Derivation, agreedOutput.BlockRef.Hash)
+	preimageRequest := &l2.PreimageRequest{
+		L1HeadHash:         common.BytesToHash(latest.L1Head.ExecutionUpdate.BlockHash),
+		AgreedL2HeadHash:   agreedOutput.BlockRef.Hash,
+		AgreedL2OutputRoot: common.BytesToHash(agreedOutput.OutputRoot[:]),
+		L2OutputRoot:       common.BytesToHash(latest.Derivation.L2OutputRoot[:]),
+		L2BlockNumber:      latest.Derivation.L2BlockNumber,
+	}
+	preimages, err := pr.l2Client.CreatePreimages(ctx, preimageRequest)
 	if err != nil {
 		return nil, err
 	}
@@ -233,16 +242,16 @@ func (pr *Prover) CreateInitialLightClientState(height ibcexported.Height) (ibce
 		return nil, nil, err
 	}
 
-	accountUpdate, err := pr.l2Client.BuildAccountUpdate(derivation.L2.L2BlockNumber)
+	accountUpdate, err := pr.l2Client.BuildAccountUpdate(derivation.L2BlockNumber)
 	if err != nil {
 		return nil, nil, err
 	}
-	timestamp, err := pr.l2Client.TimestampAt(ctx, derivation.L2.L2BlockNumber)
+	timestamp, err := pr.l2Client.TimestampAt(ctx, derivation.L2BlockNumber)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	latestHeight := util.NewHeight(derivation.L2.L2BlockNumber)
+	latestHeight := util.NewHeight(derivation.L2BlockNumber)
 
 	l1InitialState, err := pr.l1Client.BuildInitialState(derivation.L1Head.Number)
 	if err != nil {
@@ -253,7 +262,7 @@ func (pr *Prover) CreateInitialLightClientState(height ibcexported.Height) (ibce
 		return nil, nil, err
 	}
 
-	pr.GetLogger().Info("CreateInitialLightClientState", "l1", derivation.L1Head.Number, "l2", derivation.L2.L2BlockNumber)
+	pr.GetLogger().Info("CreateInitialLightClientState", "l1", derivation.L1Head.Number, "l2", derivation.L2BlockNumber)
 	clientState := &types3.ClientState{
 		ChainId:            chainID.Uint64(),
 		IbcStoreAddress:    pr.l2Client.Config().IBCAddress().Bytes(),
@@ -268,7 +277,7 @@ func (pr *Prover) CreateInitialLightClientState(height ibcexported.Height) (ibce
 	consensusState := &types3.ConsensusState{
 		StorageRoot:            accountUpdate.AccountStorageRoot,
 		Timestamp:              timestamp,
-		OutputRoot:             derivation.L2.L2OutputRoot,
+		OutputRoot:             derivation.L2OutputRoot.Bytes(),
 		L1Slot:                 l1InitialState.Slot,
 		L1CurrentSyncCommittee: l1InitialState.CurrentSyncCommittee.AggregatePubkey,
 		L1NextSyncCommittee:    l1InitialState.NextSyncCommittee.AggregatePubkey,
