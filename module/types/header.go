@@ -10,7 +10,7 @@ func (*Header) ClientType() string {
 }
 
 func (h *Header) GetHeight() exported.Height {
-	return clienttypes.NewHeight(0, h.Derivations[0].L2BlockNumber)
+	return clienttypes.NewHeight(0, h.Derivation.L2BlockNumber)
 }
 
 func (h *Header) ValidateBasic() error {
