@@ -52,14 +52,17 @@ func (pr *Prover) GetLatestFinalizedHeader() (latestFinalizedHeader core.Header,
 		time.Sleep(2 * time.Second)
 	}
 
-	accountUpdate, err := pr.l2Client.BuildAccountUpdate(derivation.L2.L2BlockNumber)
+	accountUpdate, err := pr.l2Client.BuildAccountUpdate(derivation.L2BlockNumber)
 	if err != nil {
 		return nil, err
 	}
 	header := &types3.Header{
 		AccountUpdate: accountUpdate,
 		L1Head:        l1Header,
-		Derivations:   []*types3.Derivation{&derivation.L2},
+		Derivation: &types3.Derivation{
+			L2OutputRoot:  derivation.L2OutputRoot.Bytes(),
+			L2BlockNumber: derivation.L2BlockNumber,
+		},
 	}
 	return header, nil
 }
@@ -95,74 +98,58 @@ func (pr *Prover) SetupHeadersForUpdate(counterparty core.FinalityAwareChain, la
 	if err != nil {
 		return nil, err
 	}
-	// Needless to add the latest L1 header if it is already included in the L1 headers
-	if len(l1Headers) > 0 && latest.L1Head.ExecutionUpdate.BlockNumber != l1Headers[len(l1Headers)-1].ExecutionUpdate.BlockNumber {
-		l1Headers = append(l1Headers, latest.L1Head)
-	}
 
-	// Add derivations from latest finalized to trusted height
-	finalizedExecutionUpdates := make([]*types2.ExecutionUpdate, len(l1Headers))
+	// Setup trusted height and create preimage data.
+	trustedHeight := types.NewHeight(cs.GetLatestHeight().GetRevisionNumber(), cs.GetLatestHeight().GetRevisionHeight())
+	latest.TrustedHeight = &trustedHeight
+	agreedOutput, err := pr.l2Client.OutputAtBlock(latest.TrustedHeight.GetRevisionHeight())
+	if err != nil {
+		return nil, err
+	}
+	latest.Derivation.AgreedL2OutputRoot = agreedOutput.OutputRoot[:]
+	preimageRequest := &l2.PreimageRequest{
+		L1HeadHash:         common.BytesToHash(latest.L1Head.ExecutionUpdate.BlockHash),
+		AgreedL2HeadHash:   agreedOutput.BlockRef.Hash,
+		AgreedL2OutputRoot: common.BytesToHash(agreedOutput.OutputRoot[:]),
+		L2OutputRoot:       common.BytesToHash(latest.Derivation.L2OutputRoot[:]),
+		L2BlockNumber:      latest.Derivation.L2BlockNumber,
+	}
+	preimages, err := pr.l2Client.CreatePreimages(ctx, preimageRequest)
+	if err != nil {
+		return nil, err
+	}
+	latest.Preimages = preimages
+
+	// Make L1 headers to update
+	headers := make([]core.Header, len(l1Headers))
 	for i, l1Header := range l1Headers {
-		finalizedExecutionUpdates[i] = l1Header.ExecutionUpdate
-	}
-	trustedHeight := cs.GetLatestHeight()
-	latestAgreedNumber := latest.Derivations[len(latest.Derivations)-1].L2BlockNumber - 1
-	derivations, err := pr.l2Client.SetupDerivations(ctx, trustedHeight.GetRevisionHeight(), latestAgreedNumber, finalizedExecutionUpdates)
-	if err != nil {
-		return nil, err
-	}
-	for _, derivation := range derivations {
-		pr.GetLogger().Debug("target derivation ", "l2", derivation.L2.L2BlockNumber, "l1", derivation.L1Head.Number, "latest_l1", latest.L1Head.ExecutionUpdate.BlockNumber)
-	}
-	// Create preimage data for all derivations
-	preimages, err := pr.l2Client.CreatePreimages(ctx, derivations)
-	if err != nil {
-		return nil, err
-	}
-
-	// Merge headers
-	updatingHeaders := mergeHeader(
-		trustedHeight,
-		l1Headers,
-		derivations,
-		preimages)
-
-	for _, e := range updatingHeaders {
-		header := e.(*types3.Header)
-
-		// If only L1 update, AccountUpdate is needless.
-		if len(header.Derivations) > 0 {
-			derivation := header.Derivations[len(header.Derivations)-1]
-			accountUpdate, err := pr.l2Client.BuildAccountUpdate(derivation.L2BlockNumber)
-			if err != nil {
-				return nil, err
-			}
-			header.AccountUpdate = accountUpdate
+		// L1 only update
+		headers[i] = &types3.Header{
+			TrustedHeight: latest.TrustedHeight,
+			L1Head:        l1Header,
 		}
-
-		l2Number := make([]uint64, len(header.Derivations))
-		for i, derivation := range header.Derivations {
-			l2Number[i] = derivation.L2BlockNumber
-		}
-
-		toString := func(t *types2.SyncCommittee) string {
-			if t == nil {
-				return ""
-			}
-			return common.Bytes2Hex(t.AggregatePubkey)
-		}
-		pr.GetLogger().Info("l1 header",
-			"l1", header.L1Head.ExecutionUpdate.BlockNumber,
-			"l1-is-next", header.L1Head.TrustedSyncCommittee.IsNext,
-			"l1-t-period", pr.l1Client.ComputeSyncCommitteePeriodBySlot(header.L1Head.ConsensusUpdate.SignatureSlot),
-			"l1-t-comm", toString(header.L1Head.TrustedSyncCommittee.SyncCommittee),
-			"l1-n-comm", toString(header.L1Head.ConsensusUpdate.NextSyncCommittee),
-			"trusted_l2", header.TrustedHeight.GetRevisionHeight(),
-			"l2", l2Number,
-		)
 	}
+	headers = append(headers, latest)
 
-	return updatingHeaders, nil
+	// log
+	for _, header := range headers {
+		h := header.(*types3.Header)
+		args := []interface{}{
+			"l1", h.L1Head.ExecutionUpdate.BlockNumber,
+			"l1-is-next", h.L1Head.TrustedSyncCommittee.IsNext,
+			"l1-finalized-slot", h.L1Head.ConsensusUpdate.FinalizedHeader.Slot,
+			"l1-signature-slot", h.L1Head.ConsensusUpdate.SignatureSlot,
+			"trusted", h.TrustedHeight.GetRevisionHeight(),
+		}
+		if h.L1Head.ConsensusUpdate.NextSyncCommittee != nil {
+			args = append(args, "l1-next-sc", common.Bytes2Hex(h.L1Head.ConsensusUpdate.NextSyncCommittee.AggregatePubkey))
+		}
+		if h.Derivation != nil {
+			args = append(args, "l2", h.Derivation.L2BlockNumber)
+		}
+		pr.GetLogger().Debug("SetupHeadersForUpdate", args...)
+	}
+	return headers, nil
 }
 
 func (pr *Prover) CheckRefreshRequired(counterparty core.ChainInfoICS02Querier) (bool, error) {
@@ -255,16 +242,16 @@ func (pr *Prover) CreateInitialLightClientState(height ibcexported.Height) (ibce
 		return nil, nil, err
 	}
 
-	accountUpdate, err := pr.l2Client.BuildAccountUpdate(derivation.L2.L2BlockNumber)
+	accountUpdate, err := pr.l2Client.BuildAccountUpdate(derivation.L2BlockNumber)
 	if err != nil {
 		return nil, nil, err
 	}
-	timestamp, err := pr.l2Client.TimestampAt(ctx, derivation.L2.L2BlockNumber)
+	timestamp, err := pr.l2Client.TimestampAt(ctx, derivation.L2BlockNumber)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	latestHeight := util.NewHeight(derivation.L2.L2BlockNumber)
+	latestHeight := util.NewHeight(derivation.L2BlockNumber)
 
 	l1InitialState, err := pr.l1Client.BuildInitialState(derivation.L1Head.Number)
 	if err != nil {
@@ -275,7 +262,7 @@ func (pr *Prover) CreateInitialLightClientState(height ibcexported.Height) (ibce
 		return nil, nil, err
 	}
 
-	pr.GetLogger().Info("CreateInitialLightClientState", "l1", derivation.L1Head.Number, "l2", derivation.L2.L2BlockNumber)
+	pr.GetLogger().Info("CreateInitialLightClientState", "l1", derivation.L1Head.Number, "l2", derivation.L2BlockNumber)
 	clientState := &types3.ClientState{
 		ChainId:            chainID.Uint64(),
 		IbcStoreAddress:    pr.l2Client.Config().IBCAddress().Bytes(),
@@ -290,8 +277,7 @@ func (pr *Prover) CreateInitialLightClientState(height ibcexported.Height) (ibce
 	consensusState := &types3.ConsensusState{
 		StorageRoot:            accountUpdate.AccountStorageRoot,
 		Timestamp:              timestamp,
-		OutputRoot:             derivation.L2.L2OutputRoot,
-		Hash:                   derivation.L2.L2HeadHash,
+		OutputRoot:             derivation.L2OutputRoot.Bytes(),
 		L1Slot:                 l1InitialState.Slot,
 		L1CurrentSyncCommittee: l1InitialState.CurrentSyncCommittee.AggregatePubkey,
 		L1NextSyncCommittee:    l1InitialState.NextSyncCommittee.AggregatePubkey,
@@ -307,46 +293,6 @@ func (pr *Prover) SetRelayInfo(path *core.PathEnd, counterparty *core.ProvableCh
 // SetupForRelay performs chain-specific setup before starting the relay
 func (pr *Prover) SetupForRelay(ctx context.Context) error {
 	return nil
-}
-
-// mergeHeader merges L1 headers and L2 derivations into a slice of core.Header.
-// It sets up all L1 headers and adds L2 derivations to the corresponding L1 headers.
-//
-// Returns:
-// - A slice of core.Header containing the merged L1 headers and L2 derivations.
-func mergeHeader(trustedHeight ibcexported.Height, updatingL1 []*types3.L1Header, derivations []*l2.L2Derivation, preimages []byte) []core.Header {
-	headers := make([]core.Header, len(updatingL1))
-
-	// Setup All L1 headers
-	lastDerivation := trustedHeight.GetRevisionHeight()
-	remains := derivations
-	for i, l1Header := range updatingL1 {
-		lastTrustedHeight := clienttypes.NewHeight(trustedHeight.GetRevisionNumber(), lastDerivation)
-		targetHeader := &types3.Header{
-			TrustedHeight: &lastTrustedHeight,
-			L1Head:        l1Header,
-		}
-		// Add L2 Derivation
-		target := remains
-		remains = nil
-		for _, derivation := range target {
-			if l1Header.ExecutionUpdate.BlockNumber == derivation.L1Head.Number {
-				targetHeader.Derivations = append(targetHeader.Derivations, &derivation.L2)
-				lastDerivation = derivation.L2.L2BlockNumber
-			} else {
-				// remaining
-				remains = append(remains, derivation)
-			}
-		}
-
-		// Needless to add preimages if the header has no derivations
-		if len(targetHeader.Derivations) > 0 {
-			targetHeader.Preimages = preimages
-		}
-
-		headers[i] = targetHeader
-	}
-	return headers
 }
 
 func NewProver(chain *ethereum.Chain,

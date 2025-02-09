@@ -2,6 +2,7 @@ package prover
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	"github.com/cosmos/gogoproto/proto"
@@ -101,18 +102,20 @@ func (ts *ProverTestSuite) TestGetLatestFinalizedHeader() {
 	header, err := ts.prover.GetLatestFinalizedHeader()
 	ts.Require().NoError(err)
 	h := header.(*types2.Header)
-	log.GetLogger().Info(fmt.Sprintf("header : %+v\n", h))
-	ts.Require().True(len(h.Derivations) > 0)
 	ts.Require().True(h.L1Head.ExecutionUpdate.BlockNumber > 0)
+	ts.Require().True(h.Derivation.L2BlockNumber > 0)
+	result, err := json.MarshalIndent(h, "", "  ")
+	ts.Require().NoError(err)
+	println(string(result))
 }
 
 func (ts *ProverTestSuite) TestSetupHeadersForUpdate() {
-	header, err := ts.prover.GetLatestFinalizedHeader()
+	latest, err := ts.prover.GetLatestFinalizedHeader()
 	ts.Require().NoError(err)
-	h := header.(*types2.Header)
+	h := latest.(*types2.Header)
 
 	// client state
-	trustedHeight := clienttypes.NewHeight(0, header.GetHeight().GetRevisionHeight()-10)
+	trustedHeight := clienttypes.NewHeight(0, latest.GetHeight().GetRevisionHeight()-10)
 	cs := &types2.ClientState{
 		LatestHeight: &trustedHeight,
 	}
@@ -124,10 +127,16 @@ func (ts *ProverTestSuite) TestSetupHeadersForUpdate() {
 	ts.Require().NoError(err)
 	slot, err := ts.prover.l1Client.GetSlotAtTimestamp(tm)
 	ts.Require().NoError(err)
-	const additionalPeriods = 10
+	const additionalPeriods = 3
 	const additionalSlots = l1.MINIMAL_SLOTS_PER_EPOCH * l1.MINIMAL_EPOCHS_PER_SYNC_COMMITTEE_PERIOD * additionalPeriods
+	if slot < additionalSlots {
+		ts.T().Skip("slot is too small", slot, additionalSlots)
+	}
+	trustedOutputRoot, err := ts.prover.l2Client.OutputAtBlock(trustedHeight.GetRevisionHeight())
+	ts.Require().NoError(err)
 	consState := &types2.ConsensusState{
-		L1Slot: slot - additionalSlots,
+		L1Slot:     slot - additionalSlots,
+		OutputRoot: trustedOutputRoot.OutputRoot[:],
 	}
 	protoConsState, err := codectypes.NewAnyWithValue(exported.ConsensusState(consState).(proto.Message))
 	ts.Require().NoError(err)
@@ -142,95 +151,13 @@ func (ts *ProverTestSuite) TestSetupHeadersForUpdate() {
 			ConsensusState: protoConsState,
 		},
 	}
-	headers, err := ts.prover.SetupHeadersForUpdate(chain, header)
+	headers, err := ts.prover.SetupHeadersForUpdate(chain, latest)
 	ts.Require().NoError(err)
 
 	h = headers[len(headers)-1].(*types2.Header)
 	ts.Require().True(len(h.Preimages) > 0)
-	ts.Require().True(len(h.Derivations) > 0)
-	for _, e := range headers {
-		downcast := e.(*types2.Header)
-		if len(downcast.Derivations) > 0 {
-			ts.Require().NotNil(downcast.AccountUpdate)
-		}
-	}
-
 	ts.logForUpdateClientTest(headers, 1, "test_update_client_success.bin")
 	ts.logForUpdateClientTest(headers, 2, "test_update_client_l1_only_success.bin")
-}
-
-func (ts *ProverTestSuite) TestMergeHeader() {
-	trustedHeight := clienttypes.NewHeight(0, 100)
-	trustedL1 := 100
-
-	l1Headers := make([]*types2.L1Header, 100)
-	for i := 0; i < len(l1Headers); i++ {
-		l1Headers[i] = &types2.L1Header{
-			ExecutionUpdate: &types.ExecutionUpdate{
-				BlockNumber: uint64(trustedL1 + i + 1),
-			},
-		}
-	}
-
-	// 1 : 1
-	l2Headers := make([]*l2.L2Derivation, 100)
-	for i := range l2Headers {
-		l2Headers[i] = &l2.L2Derivation{
-			L1Head: l2.L1BlockRef{
-				Number: l1Headers[i].ExecutionUpdate.BlockNumber,
-			},
-			L2: types2.Derivation{
-				L2BlockNumber: trustedHeight.GetRevisionHeight() + uint64(i+1),
-			},
-		}
-	}
-	headers := mergeHeader(trustedHeight, l1Headers, l2Headers, nil)
-	ts.Require().Len(headers, len(l1Headers))
-	for _, h := range headers {
-		header := h.(*types2.Header)
-		ts.Require().Len(header.Derivations, 1)
-	}
-
-	// latest only
-	l2Headers = make([]*l2.L2Derivation, 100)
-	for i := range l2Headers {
-		l2Headers[i] = &l2.L2Derivation{
-			L1Head: l2.L1BlockRef{
-				Number: l1Headers[len(l1Headers)-1].ExecutionUpdate.BlockNumber,
-			},
-			L2: types2.Derivation{
-				L2BlockNumber: trustedHeight.GetRevisionHeight() + uint64(i+1),
-			},
-		}
-	}
-	headers = mergeHeader(trustedHeight, l1Headers, l2Headers, nil)
-	ts.Require().Len(headers, len(l1Headers))
-	for _, h := range headers[:len(headers)-1] {
-		header := h.(*types2.Header)
-		ts.Require().Len(header.Derivations, 0)
-	}
-	ts.Require().Len(headers[len(headers)-1].(*types2.Header).Derivations, len(l2Headers)) // latest contains all
-
-	// first only
-	l2Headers = make([]*l2.L2Derivation, 100)
-	for i := range l2Headers {
-		l2Headers[i] = &l2.L2Derivation{
-			L1Head: l2.L1BlockRef{
-				Number: l1Headers[0].ExecutionUpdate.BlockNumber,
-			},
-			L2: types2.Derivation{
-				L2BlockNumber: trustedHeight.GetRevisionHeight() + uint64(i+1),
-			},
-		}
-	}
-	headers = mergeHeader(trustedHeight, l1Headers, l2Headers, nil)
-	ts.Require().Len(headers, len(l1Headers))
-	for _, h := range headers[1:] {
-		header := h.(*types2.Header)
-		ts.Require().Len(header.Derivations, 0)
-	}
-	ts.Require().Len(headers[0].(*types2.Header).Derivations, len(l2Headers))
-
 }
 
 func (ts *ProverTestSuite) logForL1Test(headers []core.Header) {
@@ -264,7 +191,6 @@ func (ts *ProverTestSuite) logForL1Test(headers []core.Header) {
 func (ts *ProverTestSuite) logForUpdateClientTest(headers []core.Header, targetIndex int, fileName string) {
 
 	h := headers[len(headers)-targetIndex].(*types2.Header)
-
 	l1state, err := ts.prover.l1Client.BuildInitialState(h.L1Head.ExecutionUpdate.BlockNumber)
 	ts.Require().NoError(err)
 	l1Config, err := ts.prover.l1Client.BuildL1Config(l1state)
@@ -281,7 +207,6 @@ func (ts *ProverTestSuite) logForUpdateClientTest(headers []core.Header, targetI
 	consState := &types2.ConsensusState{
 		StorageRoot:            l2h.Root.Bytes(),
 		OutputRoot:             outputRoot.OutputRoot[:],
-		Hash:                   l2h.Hash().Bytes(),
 		Timestamp:              l2h.Time,
 		L1Slot:                 latestTrusted.L1Head.ConsensusUpdate.FinalizedHeader.Slot,
 		L1CurrentSyncCommittee: beforeLatestTrusted.L1Head.ConsensusUpdate.NextSyncCommittee.AggregatePubkey,

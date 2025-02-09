@@ -81,5 +81,8 @@ func (c *L2Client) call(method string, params []interface{}) ([]byte, error) {
 	if err = json.Unmarshal(buf, &result); err != nil {
 		return nil, errors.WithStack(err)
 	}
+	if result.Result == nil {
+		return nil, errors.Errorf("response has no result : %s", string(buf))
+	}
 	return result.Result, err
 }
