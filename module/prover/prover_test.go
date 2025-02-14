@@ -10,6 +10,7 @@ import (
 	"github.com/cosmos/ibc-go/v8/modules/core/exported"
 	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/relay/ethereum"
 	"github.com/datachainlab/ethereum-ibc-relay-prover/light-clients/ethereum/types"
+	ethprover "github.com/datachainlab/ethereum-ibc-relay-prover/relay"
 	"github.com/datachainlab/ibc-hd-signer/pkg/hd"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l1"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l2"
@@ -128,7 +129,7 @@ func (ts *ProverTestSuite) TestSetupHeadersForUpdate() {
 	slot, err := ts.prover.l1Client.GetSlotAtTimestamp(tm)
 	ts.Require().NoError(err)
 	const additionalPeriods = 3
-	const additionalSlots = l1.MINIMAL_SLOTS_PER_EPOCH * l1.MINIMAL_EPOCHS_PER_SYNC_COMMITTEE_PERIOD * additionalPeriods
+	const additionalSlots = ethprover.MINIMAL_SLOTS_PER_EPOCH * ethprover.MINIMAL_EPOCHS_PER_SYNC_COMMITTEE_PERIOD * additionalPeriods
 	if slot < additionalSlots {
 		ts.T().Skip("slot is too small", slot, additionalSlots)
 	}
