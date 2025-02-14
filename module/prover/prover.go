@@ -33,6 +33,33 @@ type Prover struct {
 	codec codec.ProtoCodecMarshaler
 }
 
+//--------- StateProver implementation ---------//
+
+var _ core.StateProver = (*Prover)(nil)
+
+func (pr *Prover) ProveState(ctx core.QueryContext, path string, value []byte) ([]byte, types.Height, error) {
+	proofHeight := ctx.Height().GetRevisionHeight()
+	height := util.NewHeight(proofHeight)
+	proof, err := pr.l2Client.BuildStateProof([]byte(path), proofHeight)
+	return proof, *height, err
+}
+
+func (pr *Prover) ProveHostConsensusState(ctx core.QueryContext, height ibcexported.Height, consensusState ibcexported.ConsensusState) (proof []byte, err error) {
+	return clienttypes.MarshalConsensusState(pr.codec, consensusState)
+}
+
+func (pr *Prover) GetLogger() *log.RelayLogger {
+	return log.GetLogger().WithChain(pr.l2Client.ChainID()).WithModule(ModuleName)
+}
+
+var _ core.Prover = (*Prover)(nil)
+
+// Init initializes the chain
+func (pr *Prover) Init(homePath string, timeout time.Duration, codec codec.ProtoCodecMarshaler, debug bool) error {
+	pr.codec = codec
+	return nil
+}
+
 func (pr *Prover) GetLatestFinalizedHeader() (latestFinalizedHeader core.Header, err error) {
 	derivation, err := pr.l2Client.LatestDerivation(context.Background())
 	if err != nil {
@@ -199,29 +226,6 @@ func (pr *Prover) CheckRefreshRequired(counterparty core.ChainInfoICS02Querier) 
 	needsRefresh := elapsedTime > durationMulByFraction(pr.trustingPeriod, pr.refreshThresholdRate)
 
 	return needsRefresh, nil
-}
-
-func (pr *Prover) ProveState(ctx core.QueryContext, path string, value []byte) ([]byte, types.Height, error) {
-	proofHeight := ctx.Height().GetRevisionHeight()
-	height := util.NewHeight(proofHeight)
-	proof, err := pr.l2Client.BuildStateProof([]byte(path), proofHeight)
-	return proof, *height, err
-}
-
-func (pr *Prover) ProveHostConsensusState(ctx core.QueryContext, height ibcexported.Height, consensusState ibcexported.ConsensusState) (proof []byte, err error) {
-	return clienttypes.MarshalConsensusState(pr.codec, consensusState)
-}
-
-func (pr *Prover) GetLogger() *log.RelayLogger {
-	return log.GetLogger().WithChain(pr.l2Client.ChainID()).WithModule(ModuleName)
-}
-
-var _ core.Prover = (*Prover)(nil)
-
-// Init initializes the chain
-func (pr *Prover) Init(homePath string, timeout time.Duration, codec codec.ProtoCodecMarshaler, debug bool) error {
-	pr.codec = codec
-	return nil
 }
 
 // CreateInitialLightClientState returns a pair of ClientState and ConsensusState based on the state of the self chain at `height`.

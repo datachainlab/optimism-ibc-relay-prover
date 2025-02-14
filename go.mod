@@ -11,8 +11,6 @@ require (
 	github.com/datachainlab/ibc-hd-signer v0.1.1
 	github.com/ethereum/go-ethereum v1.14.12
 	github.com/hyperledger-labs/yui-relayer v0.5.10
-	github.com/prysmaticlabs/fastssz v0.0.0-20241008181541-518c4ce73516
-	github.com/prysmaticlabs/prysm/v5 v5.2.0
 	github.com/spf13/cobra v1.8.0
 	google.golang.org/protobuf v1.35.2
 )

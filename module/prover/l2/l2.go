@@ -10,8 +10,8 @@ import (
 	ibcexported "github.com/cosmos/ibc-go/v8/modules/core/exported"
 	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/relay/ethereum"
 	lctypes "github.com/datachainlab/ethereum-ibc-relay-prover/light-clients/ethereum/types"
+	ethprover "github.com/datachainlab/ethereum-ibc-relay-prover/relay"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"io"
 	"math/big"
@@ -131,39 +131,9 @@ func (c *L2Client) TimestampAt(ctx context.Context, number uint64) (uint64, erro
 }
 
 func (c *L2Client) BuildAccountUpdate(blockNumber uint64) (*lctypes.AccountUpdate, error) {
-	proof, err := c.Chain.Client().GetProof(
-		c.Chain.Config().IBCAddress(),
-		nil,
-		big.NewInt(int64(blockNumber)),
-	)
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
-	return &lctypes.AccountUpdate{
-		AccountProof:       proof.AccountProofRLP,
-		AccountStorageRoot: proof.StorageHash[:],
-	}, nil
+	return ethprover.BuildAccountUpdate(c.Chain.Client(), c.Chain.Config().IBCAddress(), blockNumber)
 }
 
 func (c *L2Client) BuildStateProof(path []byte, height uint64) ([]byte, error) {
-	// calculate slot for commitment
-	storageKey := crypto.Keccak256Hash(append(
-		crypto.Keccak256Hash(path).Bytes(),
-		IBCCommitmentsSlot.Bytes()...,
-	))
-	storageKeyHex, err := storageKey.MarshalText()
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
-
-	// call eth_getProof
-	stateProof, err := c.Chain.Client().GetProof(
-		c.Chain.Config().IBCAddress(),
-		[][]byte{storageKeyHex},
-		big.NewInt(0).SetUint64(height),
-	)
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
-	return stateProof.StorageProofRLP[0], nil
+	return ethprover.BuildStateProof(c.Chain.Client(), c.Chain.Config().IBCAddress(), path, int64(height))
 }
