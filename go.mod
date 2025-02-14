@@ -246,4 +246,4 @@ require (
 
 replace github.com/grpc-ecosystem/grpc-gateway/v2 => github.com/prysmaticlabs/grpc-gateway/v2 v2.3.1-0.20230315201114-09284ba20446
 
-replace github.com/datachainlab/ethereum-ibc-relay-prover => github.com/yoshidan/ethereum-ibc-relay-prover v0.0.0-20250116105334-de5af0cb1cec
+replace github.com/datachainlab/ethereum-ibc-relay-prover => ../../yoshidan/ethereum-ibc-relay-prover

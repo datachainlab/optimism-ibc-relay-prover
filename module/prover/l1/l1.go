@@ -8,6 +8,7 @@ import (
 	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
 	"github.com/datachainlab/ethereum-ibc-relay-prover/beacon"
 	lctypes "github.com/datachainlab/ethereum-ibc-relay-prover/light-clients/ethereum/types"
+	ethprover "github.com/datachainlab/ethereum-ibc-relay-prover/relay"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/types"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/util"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -25,7 +26,7 @@ type InitialState struct {
 type L1Client struct {
 	beaconClient    BeaconClient
 	executionClient *ethclient.Client
-	config          *L1ProverConfig
+	network         string
 }
 
 func (pr *L1Client) BuildL1Config(state *InitialState) (*types.L1Config, error) {
@@ -33,7 +34,7 @@ func (pr *L1Client) BuildL1Config(state *InitialState) (*types.L1Config, error) 
 		GenesisValidatorsRoot:        state.Genesis.GenesisValidatorsRoot[:],
 		MinSyncCommitteeParticipants: 1,
 		GenesisTime:                  state.Genesis.GenesisTimeSeconds,
-		ForkParameters:               pr.config.getForkParameters(),
+		ForkParameters:               ethprover.GetForkParameters(pr.network),
 		SecondsPerSlot:               pr.secondsPerSlot(),
 		SlotsPerEpoch:                pr.slotsPerEpoch(),
 		EpochsPerSyncCommitteePeriod: pr.epochsPerSyncCommitteePeriod(),
@@ -250,21 +251,19 @@ func NewL1Client(ctx context.Context, l1BeaconEndpoint, l1ExecutionEndpoint stri
 		return nil, errors.WithStack(err)
 	}
 
-	network := Minimal
+	network := ethprover.Minimal
 	if chainID.Uint64() == 1 {
-		network = Mainnet
+		network = ethprover.Mainnet
 	} else if chainID.Uint64() == 5 {
-		network = Goerli
+		network = ethprover.Goerli
 	} else if chainID.Uint64() == 11155111 {
-		network = Sepolia
+		network = ethprover.Sepolia
 	}
 
 	return &L1Client{
 		beaconClient:    beaconClient,
 		executionClient: executionClient,
-		config: &L1ProverConfig{
-			Network: network,
-		},
+		network:         network,
 	}, nil
 }
 
