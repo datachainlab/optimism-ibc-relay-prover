@@ -3,7 +3,6 @@ package prover
 import (
 	"context"
 	"fmt"
-	"github.com/cockroachdb/errors"
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
 	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
@@ -112,16 +111,7 @@ func (pr *Prover) SetupHeadersForUpdate(counterparty core.FinalityAwareChain, la
 	}
 
 	// Set L1 trusted sync committees
-	consStateRes, err := counterparty.QueryClientConsensusState(core.NewQueryContext(ctx, latestHeightOnDstChain), cs.GetLatestHeight())
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
-	var ibcConsState ibcexported.ConsensusState
-	if err = pr.l2Client.Codec().UnpackAny(consStateRes.ConsensusState, &ibcConsState); err != nil {
-		return nil, err
-	}
-	consState := ibcConsState.(*types3.ConsensusState)
-	l1Headers, err := pr.l1Client.GetSyncCommitteeBySlot(ctx, consState.L1Slot, latest.L1Head)
+	l1Headers, err := pr.l1Client.GetSyncCommitteeBySlot(ctx, cs.(*types3.ClientState).L1Slot, latest.L1Head)
 	if err != nil {
 		return nil, err
 	}
