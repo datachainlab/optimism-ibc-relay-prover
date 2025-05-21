@@ -134,6 +134,16 @@ func (ts *ProverTestSuite) TestSetupHeadersForUpdateShort() {
 	encodedConsState, err := rawConsState.Marshal()
 	ts.Require().NoError(err)
 
+	l1Config, err := rawCs.L1Config.Marshal()
+	ts.Require().NoError(err)
+	println("l1Config", common.Bytes2Hex(l1Config))
+
+	trustedL1, err := headers[0].(*types.Header).TrustedToDeterministic[0].Marshal()
+	println("rawL1Header", common.Bytes2Hex(trustedL1))
+
+	println("trusted_slot", int64(rawConsState.L1Slot))
+	println("trusted_current_sync_committee", common.Bytes2Hex(rawConsState.L1CurrentSyncCommittee))
+
 	ts.Require().NoError(os.WriteFile("update_client_header.bin", encodedUpdateClient, 0644))
 	println("cs", common.Bytes2Hex(encodedCs))
 	println("consState", common.Bytes2Hex(encodedConsState))
@@ -141,7 +151,32 @@ func (ts *ProverTestSuite) TestSetupHeadersForUpdateShort() {
 }
 
 func (ts *ProverTestSuite) TestSetupHeadersForUpdateLong() {
-	ts.setupHeadersForUpdate(600)
+	headers, trustedHeight := ts.setupHeadersForUpdate(600)
+	_, consState, err := ts.prover.CreateInitialLightClientState(context.Background(), trustedHeight)
+	ts.Require().NoError(err)
+	rawConsState := consState.(*types.ConsensusState)
+	println("now", time.Now().Unix())
+	for _, header := range headers {
+		h := header.(*types.Header)
+		for i, l1H := range h.TrustedToDeterministic {
+			rawL1H, err := l1H.Marshal()
+			ts.Require().NoError(err)
+			println("rawL1Header", common.Bytes2Hex(rawL1H))
+			if i == 0 {
+				println("cons_slot", rawConsState.L1Slot)
+				println("cons_l1_current_sync_committee", common.Bytes2Hex(rawConsState.L1CurrentSyncCommittee))
+				println("cons_l1_next_sync_committee", common.Bytes2Hex(rawConsState.L1NextSyncCommittee))
+			} else {
+				println("cons_slot", h.TrustedToDeterministic[i-1].ConsensusUpdate.FinalizedHeader.Slot)
+				if i == 1 {
+					println("cons_l1_current_sync_committee", common.Bytes2Hex(rawConsState.L1NextSyncCommittee))
+				} else {
+					println("cons_l1_current_sync_committee", common.Bytes2Hex(h.TrustedToDeterministic[i-2].ConsensusUpdate.NextSyncCommittee.AggregatePubkey))
+				}
+				println("cons_l1_next_sync_committee", common.Bytes2Hex(h.TrustedToDeterministic[i-1].ConsensusUpdate.NextSyncCommittee.AggregatePubkey))
+			}
+		}
+	}
 }
 
 func (ts *ProverTestSuite) setupHeadersForUpdate(latestToTrusted uint64) ([]core.Header, clienttypes.Height) {
