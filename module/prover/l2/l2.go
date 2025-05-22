@@ -164,7 +164,7 @@ func (c *L2Client) SplitHeaders(ctx context.Context, trustedL2 *OutputResponse, 
 	nextTrusted := trustedL2
 	l1Submitted := false
 	latestL1Header := deterministicToLatest[len(deterministicToLatest)-1]
-
+	logger.Info("split headers for ", "trustedL2", trustedL2.BlockRef.Number, "latestL2Header", latestHeader.Derivation.L2BlockNumber)
 	for start := trustedL2.BlockRef.Number + maxL2HeaderCount; start < latestHeader.Derivation.L2BlockNumber; start += maxL2HeaderCount {
 		accountUpdate, err := c.BuildAccountUpdate(ctx, start)
 		if err != nil {

@@ -79,7 +79,7 @@ func (pr *Prover) GetLatestFinalizedHeader(ctx context.Context) (latestFinalized
 	}
 
 	// Find L2 where L1 is deterministic.
-	var determisticL1Header *types.L1Header
+	var deterministicL1Header *types.L1Header
 	var l2Output *l2.OutputResponse
 	finalizedL2Number := syncStatus.FinalizedL2.Number
 	for {
@@ -87,12 +87,12 @@ func (pr *Prover) GetLatestFinalizedHeader(ctx context.Context) (latestFinalized
 		if err != nil {
 			return nil, err
 		}
-		determisticL1Header, err = pr.l1Client.GetConsensusHeaderByBlockNumber(ctx, l2Output.BlockRef.DeterministicFinalizedL1())
+		deterministicL1Header, err = pr.l1Client.GetConsensusHeaderByBlockNumber(ctx, l2Output.BlockRef.DeterministicFinalizedL1())
 		if err != nil {
 			return nil, err
 		}
 
-		if finalizedL1Header.ExecutionUpdate.BlockNumber >= determisticL1Header.ExecutionUpdate.BlockNumber {
+		if finalizedL1Header.ExecutionUpdate.BlockNumber >= deterministicL1Header.ExecutionUpdate.BlockNumber {
 			break
 		}
 		if finalizedL2Number == 0 {
@@ -102,9 +102,9 @@ func (pr *Prover) GetLatestFinalizedHeader(ctx context.Context) (latestFinalized
 		finalizedL2Number--
 	}
 
-	pr.GetLogger().Debug("determisticL1Header", "number", determisticL1Header.ExecutionUpdate.BlockNumber,
-		"finalized-slot", determisticL1Header.ConsensusUpdate.FinalizedHeader.Slot,
-		"signature-slot", determisticL1Header.ConsensusUpdate.SignatureSlot)
+	pr.GetLogger().Debug("deterministicL1Header", "number", deterministicL1Header.ExecutionUpdate.BlockNumber,
+		"finalized-slot", deterministicL1Header.ConsensusUpdate.FinalizedHeader.Slot,
+		"signature-slot", deterministicL1Header.ConsensusUpdate.SignatureSlot)
 	pr.GetLogger().Debug("finalizedL1Header", "number", finalizedL1Header.ExecutionUpdate.BlockNumber,
 		"finalized-slot", finalizedL1Header.ConsensusUpdate.FinalizedHeader.Slot,
 		"signature-slot", finalizedL1Header.ConsensusUpdate.SignatureSlot)
@@ -115,7 +115,7 @@ func (pr *Prover) GetLatestFinalizedHeader(ctx context.Context) (latestFinalized
 	}
 	header := &types.Header{
 		AccountUpdate:         accountUpdate,
-		DeterministicToLatest: []*types.L1Header{determisticL1Header, finalizedL1Header},
+		DeterministicToLatest: []*types.L1Header{deterministicL1Header, finalizedL1Header},
 		Derivation: &types.Derivation{
 			L2OutputRoot:  l2Output.OutputRoot[:],
 			L2BlockNumber: l2Output.BlockRef.Number,
@@ -141,9 +141,15 @@ func (pr *Prover) SetupHeadersForUpdate(ctx context.Context, counterparty core.F
 	}
 	trustedHeight := clienttypes.NewHeight(cs.GetLatestHeight().GetRevisionNumber(), cs.GetLatestHeight().GetRevisionHeight())
 
+	pr.GetLogger().Info("Setup Headers For Update", "trustedHeight", trustedHeight.GetRevisionHeight(), "latest", latest.Derivation.L2BlockNumber)
+
 	// No need to update
 	if trustedHeight.GetRevisionHeight() == latest.Derivation.L2BlockNumber {
 		pr.GetLogger().Info("latest is trusted", "l2", latest.Derivation.L2BlockNumber)
+		return nil, nil
+	}
+	if trustedHeight.GetRevisionHeight() > latest.Derivation.L2BlockNumber {
+		pr.GetLogger().Info("past l2 header", "trustedL2", trustedHeight.GetRevisionHeight(), "targetL2", latest.Derivation.L2BlockNumber)
 		return nil, nil
 	}
 
