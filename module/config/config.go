@@ -21,7 +21,13 @@ func (c *ProverConfig) Build(chain core.Chain) (core.Prover, error) {
 	if err != nil {
 		return nil, err
 	}
-	l2Client := l2.NewL2Client(l2Chain, c.L1ExecutionEndpoint, c.PreimageMakerTimeout, c.PreimageMakerEndpoint, c.OpNodeEndpoint)
+	l2Client := l2.NewL2Client(l2Chain, c.L1ExecutionEndpoint,
+		c.PreimageMakerTimeout,
+		c.PreimageMakerEndpoint,
+		c.OpNodeEndpoint,
+		c.MaxL2NumsForPreimage,
+		c.MaxConcurrentPreimageRequests,
+	)
 	return prover.NewProver(l2Chain, l1Client, l2Client, c.TrustingPeriod, c.RefreshThresholdRate, c.MaxClockDrift), nil
 }
 

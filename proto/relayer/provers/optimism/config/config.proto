@@ -16,4 +16,6 @@ message ProverConfig {
   string preimage_maker_endpoint = 7;
   google.protobuf.Duration preimage_maker_timeout = 8 [(gogoproto.nullable) = false, (gogoproto.stdduration) = true];
   map<string, uint64> minimal_fork_sched = 9;
+  uint64 max_l2nums_for_preimage = 10;
+  uint64 max_concurrent_preimage_requests = 11;
 }
