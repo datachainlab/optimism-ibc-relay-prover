@@ -23,3 +23,11 @@ go.work.sum
 
 # env file
 .env
+tests/contracts/addresses
+tests/contracts/artifacts
+tests/contracts/cache
+**/node_modules
+**.bin
+
+hostPort.json
+**/hardhat.config.js
