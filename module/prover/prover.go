@@ -309,6 +309,7 @@ func (pr *Prover) CreateInitialLightClientState(ctx context.Context, height expo
 		L1Slot:                 l1InitialState.Slot,
 		L1CurrentSyncCommittee: l1InitialState.CurrentSyncCommittee.AggregatePubkey,
 		L1NextSyncCommittee:    l1InitialState.NextSyncCommittee.AggregatePubkey,
+		L1Timestamp:            l1InitialState.Timestamp,
 	}
 	return clientState, consensusState, nil
 }

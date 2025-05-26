@@ -18,6 +18,7 @@ type InitialState struct {
 	Genesis              beacon.Genesis
 	Slot                 uint64
 	Period               uint64
+	Timestamp            uint64
 	CurrentSyncCommittee lctypes.SyncCommittee
 	NextSyncCommittee    lctypes.SyncCommittee
 }
@@ -65,6 +66,7 @@ func (pr *L1Client) GetLatestFinalizedL1Header(ctx context.Context) (*types.L1He
 	return &types.L1Header{
 		ConsensusUpdate: lcUpdate,
 		ExecutionUpdate: executionUpdate,
+		Timestamp:       executionHeader.Timestamp,
 	}, nil
 }
 
@@ -101,6 +103,7 @@ func (pr *L1Client) BuildInitialState(ctx context.Context, blockNumber uint64) (
 		Period:               period,
 		CurrentSyncCommittee: *currentSyncCommittee,
 		NextSyncCommittee:    *nextSyncCommittee,
+		Timestamp:            timestamp,
 	}, nil
 }
 
@@ -236,6 +239,7 @@ func (pr *L1Client) BuildNextSyncCommitteeUpdate(ctx context.Context, period uin
 		},
 		ConsensusUpdate: lcUpdate,
 		ExecutionUpdate: executionUpdate,
+		Timestamp:       executionHeader.Timestamp,
 	}, nil
 }
 
