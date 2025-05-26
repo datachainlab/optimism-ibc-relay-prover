@@ -248,17 +248,31 @@ func (c *L2Client) SplitHeaders(ctx context.Context, trustedL2 *OutputResponse, 
 	}
 
 	nextTrustedL1 := trustedToDeterministic[0]
-	for _, h := range preimageRequests {
+	for i, h := range preimageRequests {
 
 		// Set trusted to deterministic
 		for _, l1Header := range trustedToDeterministic {
-			if l1Header.ExecutionUpdate.BlockNumber < nextTrustedL1.ExecutionUpdate.BlockNumber {
-				continue
-			}
 			if l1Header.ExecutionUpdate.BlockNumber > h.DeterministicFinalizedL1 {
 				continue
 			}
-			h.Header.TrustedToDeterministic = append(h.Header.TrustedToDeterministic, l1Header)
+			if l1Header.ExecutionUpdate.BlockNumber == nextTrustedL1.ExecutionUpdate.BlockNumber {
+				if i > 0 {
+					// Must set TrustedSyncCommittee.IsNext to false for next header
+					h.Header.TrustedToDeterministic = append(h.Header.TrustedToDeterministic, &types.L1Header{
+						TrustedSyncCommittee: &types.TrustedSyncCommittee{
+							SyncCommittee: nextTrustedL1.TrustedSyncCommittee.SyncCommittee,
+							IsNext:        false,
+						},
+						ConsensusUpdate: l1Header.ConsensusUpdate,
+						ExecutionUpdate: l1Header.ExecutionUpdate,
+						Timestamp:       l1Header.Timestamp,
+					})
+				} else {
+					h.Header.TrustedToDeterministic = append(h.Header.TrustedToDeterministic, l1Header)
+				}
+			} else if l1Header.ExecutionUpdate.BlockNumber > nextTrustedL1.ExecutionUpdate.BlockNumber {
+				h.Header.TrustedToDeterministic = append(h.Header.TrustedToDeterministic, l1Header)
+			}
 		}
 		if len(h.Header.TrustedToDeterministic) > 0 {
 			nextTrustedL1 = h.Header.TrustedToDeterministic[len(h.Header.TrustedToDeterministic)-1]
@@ -271,20 +285,28 @@ func (c *L2Client) SplitHeaders(ctx context.Context, trustedL2 *OutputResponse, 
 				h.Header.DeterministicToLatest = append(h.Header.DeterministicToLatest, l1Header)
 			}
 		}
-		h.Header.DeterministicToLatest = nil
-		for _, l1Header := range deterministicToLatest {
-			if l1Header.ExecutionUpdate.BlockNumber > nextTrustedL1.ExecutionUpdate.BlockNumber {
-				h.Header.DeterministicToLatest = append(h.Header.DeterministicToLatest, l1Header)
+		if len(h.Header.DeterministicToLatest) > 0 {
+			last := h.Header.DeterministicToLatest[len(h.Header.DeterministicToLatest)-1]
+			for _, l1Header := range deterministicToLatest {
+				if l1Header.ExecutionUpdate.BlockNumber > last.ExecutionUpdate.BlockNumber {
+					h.Header.DeterministicToLatest = append(h.Header.DeterministicToLatest, l1Header)
+				}
+			}
+		} else {
+			for _, l1Header := range deterministicToLatest {
+				if l1Header.ExecutionUpdate.BlockNumber > nextTrustedL1.ExecutionUpdate.BlockNumber {
+					h.Header.DeterministicToLatest = append(h.Header.DeterministicToLatest, l1Header)
+				}
 			}
 		}
 
 		trustedToDeterministicNums := util.Map(h.Header.TrustedToDeterministic, func(item *types.L1Header, index int) string {
-			return fmt.Sprintf("%d/%t", item.ConsensusUpdate.SignatureSlot, item.TrustedSyncCommittee.IsNext)
+			return fmt.Sprintf("%d/%t", item.ConsensusUpdate.FinalizedHeader.Slot, item.TrustedSyncCommittee.IsNext)
 		})
 		deterministicToLatestNums := util.Map(h.Header.DeterministicToLatest, func(item *types.L1Header, index int) string {
-			return fmt.Sprintf("%d/%t", item.ConsensusUpdate.SignatureSlot, item.TrustedSyncCommittee.IsNext)
+			return fmt.Sprintf("%d/%t", item.ConsensusUpdate.FinalizedHeader.Slot, item.TrustedSyncCommittee.IsNext)
 		})
-		logger.Info("targetHeaders", "l2", h.Header.Derivation.L2BlockNumber, "trusted_l2", h.Header.TrustedHeight.GetRevisionHeight(), "l1_t2d", trustedToDeterministicNums, "l1_d2l", deterministicToLatestNums, "preimages", len(h.Header.Preimages))
+		logger.Info("targetHeaders", "l2", h.Header.Derivation.L2BlockNumber, "l1", h.DeterministicFinalizedL1, "trusted_l2", h.Header.TrustedHeight.GetRevisionHeight(), "l1_t2d", trustedToDeterministicNums, "l1_d2l", deterministicToLatestNums, "preimages", len(h.Header.Preimages))
 	}
 
 	return targetHeaders, nil

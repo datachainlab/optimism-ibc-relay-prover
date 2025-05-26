@@ -161,27 +161,35 @@ func (ts *ProverTestSuite) TestSetupHeadersForUpdateLong() {
 	ts.Require().NoError(err)
 	rawConsState := consState.(*types.ConsensusState)
 	println("now", time.Now().Unix())
+	l1HeaderKeys := map[uint64]struct{}{}
+	var l1Headers []*types.L1Header
 	for _, header := range headers {
 		h := header.(*types.Header)
-		for i, l1H := range h.TrustedToDeterministic {
-			rawL1H, err := l1H.Marshal()
-			ts.Require().NoError(err)
-			println("rawL1Header", common.Bytes2Hex(rawL1H))
-			if i == 0 {
-				println("cons_slot", rawConsState.L1Slot)
-				println("cons_l1_current_sync_committee", common.Bytes2Hex(rawConsState.L1CurrentSyncCommittee))
-				println("cons_l1_next_sync_committee", common.Bytes2Hex(rawConsState.L1NextSyncCommittee))
-				println("cons_l1_timestamp", rawConsState.Timestamp)
-			} else {
-				println("cons_slot", h.TrustedToDeterministic[i-1].ConsensusUpdate.FinalizedHeader.Slot)
-				if i == 1 {
-					println("cons_l1_current_sync_committee", common.Bytes2Hex(rawConsState.L1NextSyncCommittee))
-				} else {
-					println("cons_l1_current_sync_committee", common.Bytes2Hex(h.TrustedToDeterministic[i-2].ConsensusUpdate.NextSyncCommittee.AggregatePubkey))
-				}
-				println("cons_l1_next_sync_committee", common.Bytes2Hex(h.TrustedToDeterministic[i-1].ConsensusUpdate.NextSyncCommittee.AggregatePubkey))
-				println("cons_l1_timestamp", h.TrustedToDeterministic[i-1].Timestamp)
+		for _, l1H := range h.TrustedToDeterministic {
+			if _, ok := l1HeaderKeys[l1H.ExecutionUpdate.BlockNumber]; !ok {
+				l1HeaderKeys[l1H.ExecutionUpdate.BlockNumber] = struct{}{}
+				l1Headers = append(l1Headers, l1H)
 			}
+		}
+	}
+	for i, l1H := range l1Headers {
+		rawL1H, err := l1H.Marshal()
+		ts.Require().NoError(err)
+		println("rawL1Header", common.Bytes2Hex(rawL1H))
+		if i == 0 {
+			println("cons_slot", rawConsState.L1Slot)
+			println("cons_l1_current_sync_committee", common.Bytes2Hex(rawConsState.L1CurrentSyncCommittee))
+			println("cons_l1_next_sync_committee", common.Bytes2Hex(rawConsState.L1NextSyncCommittee))
+			println("cons_l1_timestamp", rawConsState.Timestamp)
+		} else {
+			println("cons_slot", l1Headers[i-1].ConsensusUpdate.FinalizedHeader.Slot)
+			if i == 1 {
+				println("cons_l1_current_sync_committee", common.Bytes2Hex(rawConsState.L1NextSyncCommittee))
+			} else {
+				println("cons_l1_current_sync_committee", common.Bytes2Hex(l1Headers[i-2].ConsensusUpdate.NextSyncCommittee.AggregatePubkey))
+			}
+			println("cons_l1_next_sync_committee", common.Bytes2Hex(l1Headers[i-1].ConsensusUpdate.NextSyncCommittee.AggregatePubkey))
+			println("cons_l1_timestamp", l1Headers[i-1].Timestamp)
 		}
 	}
 }
