@@ -159,27 +159,44 @@ func (pr *Prover) SetupHeadersForUpdate(ctx context.Context, counterparty core.F
 		return nil, err
 	}
 	trustedL1BlockNumber := trustedOutput.BlockRef.DeterministicFinalizedL1()
-	deterministicL1 := latest.DeterministicToLatest[0]
-
-	trustedToDeterministic, err := pr.l1Client.GetSyncCommitteesFromTrustedToLatest(ctx, trustedL1BlockNumber, deterministicL1)
-	if err != nil {
-		return nil, err
-	}
 	latestL1 := latest.DeterministicToLatest[1]
-	deterministicToLatest, err := pr.l1Client.GetSyncCommitteesFromTrustedToLatest(ctx, deterministicL1.ExecutionUpdate.BlockNumber, latestL1)
+	headers, err := pr.l2Client.SplitHeaders(ctx, trustedOutput, latest, latestL1)
 	if err != nil {
 		return nil, err
 	}
+	nextTrustedL1 := trustedL1BlockNumber
+	for _, h := range headers {
+		ih := h.(*types.Header)
+		output, err := pr.l2Client.OutputAtBlock(ctx, ih.Derivation.L2BlockNumber)
+		if err != nil {
+			return nil, err
+		}
+		deterministicL1, err := pr.l1Client.GetConsensusHeaderByBlockNumber(ctx, output.BlockRef.DeterministicFinalizedL1())
+		if err != nil {
+			return nil, err
+		}
+		ih.TrustedToDeterministic, err = pr.l1Client.GetSyncCommitteesFromTrustedToLatest(ctx, nextTrustedL1, deterministicL1)
+		if err != nil {
+			return nil, err
+		}
+		ih.DeterministicToLatest, err = pr.l1Client.GetSyncCommitteesFromTrustedToLatest(ctx, deterministicL1.ExecutionUpdate.BlockNumber, latestL1)
+		if err != nil {
+			return nil, err
+		}
+		nextTrustedL1 = deterministicL1.ExecutionUpdate.BlockNumber
 
-	// output log
-	for _, h := range trustedToDeterministic {
-		pr.GetLogger().Debug("trustedToDeterministic l1 headers", h.ToLogValue()...)
 	}
-	for _, h := range deterministicToLatest {
-		pr.GetLogger().Debug("deterministicToLatest l1 headers", h.ToLogValue()...)
+	for _, h := range headers {
+		ih := h.(*types.Header)
+		trustedToDeterministicNums := util.Map(ih.TrustedToDeterministic, func(item *types.L1Header, index int) string {
+			return fmt.Sprintf("%d/%t", item.ConsensusUpdate.FinalizedHeader.Slot, item.TrustedSyncCommittee.IsNext)
+		})
+		deterministicToLatestNums := util.Map(ih.DeterministicToLatest, func(item *types.L1Header, index int) string {
+			return fmt.Sprintf("%d/%t", item.ConsensusUpdate.FinalizedHeader.Slot, item.TrustedSyncCommittee.IsNext)
+		})
+		pr.GetLogger().Info("targetHeaders", "l2", ih.Derivation.L2BlockNumber, "trusted_l2", ih.TrustedHeight.GetRevisionHeight(), "l1_t2d", trustedToDeterministicNums, "l1_d2l", deterministicToLatestNums, "preimages", len(ih.Preimages))
 	}
-
-	return pr.l2Client.SplitHeaders(ctx, trustedOutput, latest, trustedToDeterministic, deterministicToLatest)
+	return headers, nil
 }
 
 func (pr *Prover) CheckRefreshRequired(ctx context.Context, counterparty core.ChainInfoICS02Querier) (bool, error) {

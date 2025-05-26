@@ -12,7 +12,6 @@ import (
 	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/relay/ethereum"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/types"
 	lctypes "github.com/datachainlab/optimism-ibc-relay-prover/module/types"
-	"github.com/datachainlab/optimism-ibc-relay-prover/module/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -164,19 +163,17 @@ func (c *L2Client) BuildStateProof(ctx context.Context, path []byte, height int6
 }
 
 type headerWithPreimageRequest struct {
-	Header                   *types.Header
-	PreimageRequest          *PreimageRequest
-	DeterministicFinalizedL1 uint64
+	Header          *types.Header
+	PreimageRequest *PreimageRequest
 }
 
 // SplitHeaders splits the headers between the trusted L2 block and the latest L2 block.
 // It iterates through the blocks, creating account updates, generating preimages, and constructing headers.
-func (c *L2Client) SplitHeaders(ctx context.Context, trustedL2 *OutputResponse, latestHeader *types.Header, trustedToDeterministic, deterministicToLatest []*types.L1Header) ([]core.Header, error) {
+func (c *L2Client) SplitHeaders(ctx context.Context, trustedL2 *OutputResponse, latestHeader *types.Header, latestL1Header *types.L1Header) ([]core.Header, error) {
 	logger := log.GetLogger()
 	var targetHeaders []core.Header
 
 	nextTrusted := trustedL2
-	latestL1Header := deterministicToLatest[len(deterministicToLatest)-1]
 	logger.Info("split headers for ", "trustedL2", trustedL2.BlockRef.Number, "latestL2Header", latestHeader.Derivation.L2BlockNumber)
 
 	preimageRequests := make([]*headerWithPreimageRequest, 0)
@@ -207,8 +204,7 @@ func (c *L2Client) SplitHeaders(ctx context.Context, trustedL2 *OutputResponse, 
 
 		// Later concurrent preimage call
 		preimageRequests = append(preimageRequests, &headerWithPreimageRequest{
-			Header:                   header,
-			DeterministicFinalizedL1: claimingOutput.BlockRef.DeterministicFinalizedL1(),
+			Header: header,
 			PreimageRequest: &PreimageRequest{
 				L1HeadHash:         common.BytesToHash(latestL1Header.ExecutionUpdate.BlockHash),
 				AgreedL2HeadHash:   nextTrusted.BlockRef.Hash,
@@ -225,14 +221,12 @@ func (c *L2Client) SplitHeaders(ctx context.Context, trustedL2 *OutputResponse, 
 	// set up latest header
 	t := clienttypes.NewHeight(latestHeader.GetHeight().GetRevisionNumber(), nextTrusted.BlockRef.Number)
 	latestHeader.TrustedHeight = &t
-	latestHeader.DeterministicToLatest = deterministicToLatest
 	latestHeader.Derivation.AgreedL2OutputRoot = nextTrusted.OutputRoot[:]
 	targetHeaders = append(targetHeaders, latestHeader)
 
 	// Later concurrent preimage call
 	preimageRequests = append(preimageRequests, &headerWithPreimageRequest{
-		Header:                   latestHeader,
-		DeterministicFinalizedL1: trustedToDeterministic[len(trustedToDeterministic)-1].ExecutionUpdate.BlockNumber,
+		Header: latestHeader,
 		PreimageRequest: &PreimageRequest{
 			L1HeadHash:         common.BytesToHash(latestL1Header.ExecutionUpdate.BlockHash),
 			AgreedL2HeadHash:   nextTrusted.BlockRef.Hash,
@@ -246,69 +240,6 @@ func (c *L2Client) SplitHeaders(ctx context.Context, trustedL2 *OutputResponse, 
 	if err := c.setPreimageDataIntoHeaders(ctx, preimageRequests); err != nil {
 		return nil, errors.WithStack(err)
 	}
-
-	nextTrustedL1 := trustedToDeterministic[0]
-	for i, h := range preimageRequests {
-
-		// Set trusted to deterministic
-		for _, l1Header := range trustedToDeterministic {
-			if l1Header.ExecutionUpdate.BlockNumber > h.DeterministicFinalizedL1 {
-				continue
-			}
-			if l1Header.ExecutionUpdate.BlockNumber == nextTrustedL1.ExecutionUpdate.BlockNumber {
-				if i > 0 {
-					// Must set TrustedSyncCommittee.IsNext to false for next header
-					h.Header.TrustedToDeterministic = append(h.Header.TrustedToDeterministic, &types.L1Header{
-						TrustedSyncCommittee: &types.TrustedSyncCommittee{
-							SyncCommittee: nextTrustedL1.TrustedSyncCommittee.SyncCommittee,
-							IsNext:        false,
-						},
-						ConsensusUpdate: l1Header.ConsensusUpdate,
-						ExecutionUpdate: l1Header.ExecutionUpdate,
-						Timestamp:       l1Header.Timestamp,
-					})
-				} else {
-					h.Header.TrustedToDeterministic = append(h.Header.TrustedToDeterministic, l1Header)
-				}
-			} else if l1Header.ExecutionUpdate.BlockNumber > nextTrustedL1.ExecutionUpdate.BlockNumber {
-				h.Header.TrustedToDeterministic = append(h.Header.TrustedToDeterministic, l1Header)
-			}
-		}
-		if len(h.Header.TrustedToDeterministic) > 0 {
-			nextTrustedL1 = h.Header.TrustedToDeterministic[len(h.Header.TrustedToDeterministic)-1]
-		}
-
-		// Set deterministic to latest
-		h.Header.DeterministicToLatest = nil
-		for _, l1Header := range trustedToDeterministic {
-			if l1Header.ExecutionUpdate.BlockNumber > nextTrustedL1.ExecutionUpdate.BlockNumber {
-				h.Header.DeterministicToLatest = append(h.Header.DeterministicToLatest, l1Header)
-			}
-		}
-		if len(h.Header.DeterministicToLatest) > 0 {
-			last := h.Header.DeterministicToLatest[len(h.Header.DeterministicToLatest)-1]
-			for _, l1Header := range deterministicToLatest {
-				if l1Header.ExecutionUpdate.BlockNumber > last.ExecutionUpdate.BlockNumber {
-					h.Header.DeterministicToLatest = append(h.Header.DeterministicToLatest, l1Header)
-				}
-			}
-		} else {
-			for _, l1Header := range deterministicToLatest {
-				if l1Header.ExecutionUpdate.BlockNumber > nextTrustedL1.ExecutionUpdate.BlockNumber {
-					h.Header.DeterministicToLatest = append(h.Header.DeterministicToLatest, l1Header)
-				}
-			}
-		}
-
-		trustedToDeterministicNums := util.Map(h.Header.TrustedToDeterministic, func(item *types.L1Header, index int) string {
-			return fmt.Sprintf("%d/%t", item.ConsensusUpdate.FinalizedHeader.Slot, item.TrustedSyncCommittee.IsNext)
-		})
-		deterministicToLatestNums := util.Map(h.Header.DeterministicToLatest, func(item *types.L1Header, index int) string {
-			return fmt.Sprintf("%d/%t", item.ConsensusUpdate.FinalizedHeader.Slot, item.TrustedSyncCommittee.IsNext)
-		})
-		logger.Info("targetHeaders", "l2", h.Header.Derivation.L2BlockNumber, "l1", h.DeterministicFinalizedL1, "trusted_l2", h.Header.TrustedHeight.GetRevisionHeight(), "l1_t2d", trustedToDeterministicNums, "l1_d2l", deterministicToLatestNums, "preimages", len(h.Header.Preimages))
-	}
-
 	return targetHeaders, nil
 
 }
