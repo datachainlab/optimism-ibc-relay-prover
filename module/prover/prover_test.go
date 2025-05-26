@@ -81,7 +81,7 @@ func (ts *ProverTestSuite) SetupTest() {
 	}, nil, nil)
 	ts.Require().NoError(err)
 
-	trustingPeriod := 3600 * time.Second
+	trustingPeriod := 86400 * time.Second
 	maxClockDrift := 1 * time.Millisecond
 	refreshThresholdRate := &types.Fraction{
 		Numerator:   1,
@@ -141,6 +141,7 @@ func (ts *ProverTestSuite) TestSetupHeadersForUpdateShort() {
 	trustedL1, err := headers[0].(*types.Header).TrustedToDeterministic[0].Marshal()
 	println("rawL1Header", common.Bytes2Hex(trustedL1))
 
+	println("trusted_timestamp", rawConsState.L1Timestamp)
 	println("trusted_slot", int64(rawConsState.L1Slot))
 	println("trusted_current_sync_committee", common.Bytes2Hex(rawConsState.L1CurrentSyncCommittee))
 
@@ -152,7 +153,11 @@ func (ts *ProverTestSuite) TestSetupHeadersForUpdateShort() {
 
 func (ts *ProverTestSuite) TestSetupHeadersForUpdateLong() {
 	headers, trustedHeight := ts.setupHeadersForUpdate(600)
-	_, consState, err := ts.prover.CreateInitialLightClientState(context.Background(), trustedHeight)
+	cs, consState, err := ts.prover.CreateInitialLightClientState(context.Background(), trustedHeight)
+	ts.Require().NoError(err)
+	rawCs := cs.(*types.ClientState)
+	rawL1Config, err := rawCs.L1Config.Marshal()
+	println("rawL1Config", common.Bytes2Hex(rawL1Config))
 	ts.Require().NoError(err)
 	rawConsState := consState.(*types.ConsensusState)
 	println("now", time.Now().Unix())
@@ -166,6 +171,7 @@ func (ts *ProverTestSuite) TestSetupHeadersForUpdateLong() {
 				println("cons_slot", rawConsState.L1Slot)
 				println("cons_l1_current_sync_committee", common.Bytes2Hex(rawConsState.L1CurrentSyncCommittee))
 				println("cons_l1_next_sync_committee", common.Bytes2Hex(rawConsState.L1NextSyncCommittee))
+				println("cons_l1_timestamp", rawConsState.Timestamp)
 			} else {
 				println("cons_slot", h.TrustedToDeterministic[i-1].ConsensusUpdate.FinalizedHeader.Slot)
 				if i == 1 {
@@ -174,6 +180,7 @@ func (ts *ProverTestSuite) TestSetupHeadersForUpdateLong() {
 					println("cons_l1_current_sync_committee", common.Bytes2Hex(h.TrustedToDeterministic[i-2].ConsensusUpdate.NextSyncCommittee.AggregatePubkey))
 				}
 				println("cons_l1_next_sync_committee", common.Bytes2Hex(h.TrustedToDeterministic[i-1].ConsensusUpdate.NextSyncCommittee.AggregatePubkey))
+				println("cons_l1_timestamp", h.TrustedToDeterministic[i-1].Timestamp)
 			}
 		}
 	}
