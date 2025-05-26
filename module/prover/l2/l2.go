@@ -12,6 +12,7 @@ import (
 	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/relay/ethereum"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/types"
 	lctypes "github.com/datachainlab/optimism-ibc-relay-prover/module/types"
+	"github.com/datachainlab/optimism-ibc-relay-prover/module/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -163,8 +164,9 @@ func (c *L2Client) BuildStateProof(ctx context.Context, path []byte, height int6
 }
 
 type headerWithPreimageRequest struct {
-	Header          *types.Header
-	PreimageRequest *PreimageRequest
+	Header                   *types.Header
+	PreimageRequest          *PreimageRequest
+	DeterministicFinalizedL1 uint64
 }
 
 // SplitHeaders splits the headers between the trusted L2 block and the latest L2 block.
@@ -199,13 +201,14 @@ func (c *L2Client) SplitHeaders(ctx context.Context, trustedL2 *OutputResponse, 
 				L2OutputRoot:       claimingOutput.OutputRoot[:],
 				L2BlockNumber:      claimingOutput.BlockRef.Number,
 			},
-			DeterministicToLatest: deterministicToLatest,
 		}
+
 		targetHeaders = append(targetHeaders, header)
 
 		// Later concurrent preimage call
 		preimageRequests = append(preimageRequests, &headerWithPreimageRequest{
-			Header: header,
+			Header:                   header,
+			DeterministicFinalizedL1: claimingOutput.BlockRef.DeterministicFinalizedL1(),
 			PreimageRequest: &PreimageRequest{
 				L1HeadHash:         common.BytesToHash(latestL1Header.ExecutionUpdate.BlockHash),
 				AgreedL2HeadHash:   nextTrusted.BlockRef.Hash,
@@ -228,7 +231,8 @@ func (c *L2Client) SplitHeaders(ctx context.Context, trustedL2 *OutputResponse, 
 
 	// Later concurrent preimage call
 	preimageRequests = append(preimageRequests, &headerWithPreimageRequest{
-		Header: latestHeader,
+		Header:                   latestHeader,
+		DeterministicFinalizedL1: trustedToDeterministic[len(trustedToDeterministic)-1].ExecutionUpdate.BlockNumber,
 		PreimageRequest: &PreimageRequest{
 			L1HeadHash:         common.BytesToHash(latestL1Header.ExecutionUpdate.BlockHash),
 			AgreedL2HeadHash:   nextTrusted.BlockRef.Hash,
@@ -243,17 +247,44 @@ func (c *L2Client) SplitHeaders(ctx context.Context, trustedL2 *OutputResponse, 
 		return nil, errors.WithStack(err)
 	}
 
-	for i, h := range targetHeaders {
-		ih := h.(*types.Header)
+	nextTrustedL1 := trustedToDeterministic[0]
+	for _, h := range preimageRequests {
 
-		// Only first header needs trustedToDeterministic
-		if i == 0 {
-			ih.TrustedToDeterministic = trustedToDeterministic
-		} else {
-			ih.TrustedToDeterministic = nil
+		// Set trusted to deterministic
+		for _, l1Header := range trustedToDeterministic {
+			if l1Header.ExecutionUpdate.BlockNumber < nextTrustedL1.ExecutionUpdate.BlockNumber {
+				continue
+			}
+			if l1Header.ExecutionUpdate.BlockNumber > h.DeterministicFinalizedL1 {
+				continue
+			}
+			h.Header.TrustedToDeterministic = append(h.Header.TrustedToDeterministic, l1Header)
+		}
+		if len(h.Header.TrustedToDeterministic) > 0 {
+			nextTrustedL1 = h.Header.TrustedToDeterministic[len(h.Header.TrustedToDeterministic)-1]
 		}
 
-		logger.Info("targetHeaders", "l2", ih.Derivation.L2BlockNumber, "trusted_l2", ih.TrustedHeight.GetRevisionHeight(), "l1_t2d", len(ih.TrustedToDeterministic), "l1_d2l", len(ih.DeterministicToLatest), "preimages", len(ih.Preimages))
+		// Set deterministic to latest
+		h.Header.DeterministicToLatest = nil
+		for _, l1Header := range trustedToDeterministic {
+			if l1Header.ExecutionUpdate.BlockNumber > nextTrustedL1.ExecutionUpdate.BlockNumber {
+				h.Header.DeterministicToLatest = append(h.Header.DeterministicToLatest, l1Header)
+			}
+		}
+		h.Header.DeterministicToLatest = nil
+		for _, l1Header := range deterministicToLatest {
+			if l1Header.ExecutionUpdate.BlockNumber > nextTrustedL1.ExecutionUpdate.BlockNumber {
+				h.Header.DeterministicToLatest = append(h.Header.DeterministicToLatest, l1Header)
+			}
+		}
+
+		trustedToDeterministicNums := util.Map(h.Header.TrustedToDeterministic, func(item *types.L1Header, index int) string {
+			return fmt.Sprintf("%d/%t", item.ConsensusUpdate.SignatureSlot, item.TrustedSyncCommittee.IsNext)
+		})
+		deterministicToLatestNums := util.Map(h.Header.DeterministicToLatest, func(item *types.L1Header, index int) string {
+			return fmt.Sprintf("%d/%t", item.ConsensusUpdate.SignatureSlot, item.TrustedSyncCommittee.IsNext)
+		})
+		logger.Info("targetHeaders", "l2", h.Header.Derivation.L2BlockNumber, "trusted_l2", h.Header.TrustedHeight.GetRevisionHeight(), "l1_t2d", trustedToDeterministicNums, "l1_d2l", deterministicToLatestNums, "preimages", len(h.Header.Preimages))
 	}
 
 	return targetHeaders, nil

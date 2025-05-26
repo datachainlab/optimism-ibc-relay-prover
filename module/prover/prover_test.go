@@ -210,18 +210,32 @@ func (ts *ProverTestSuite) setupHeadersForUpdate(latestToTrusted uint64) ([]core
 	ts.Require().NoError(err)
 
 	nextTrusted := trustedHeight.RevisionHeight
+	lastT2D := uint64(0)
 	for i, h := range headers {
 		ih := h.(*types2.Header)
 		ts.Require().True(len(ih.AccountUpdate.AccountStorageRoot) > 0)
 		ts.Require().True(len(ih.DeterministicToLatest) > 0)
-		if i == 0 {
-			ts.Require().True(len(ih.TrustedToDeterministic) > 0)
-		} else {
-			ts.Require().True(len(ih.TrustedToDeterministic) == 0)
-		}
 		ts.Require().Equal(ih.TrustedHeight.RevisionHeight, nextTrusted, i)
 		nextTrusted = ih.Derivation.L2BlockNumber
-
+		if i > 0 {
+			for j, t2d := range ih.TrustedToDeterministic {
+				ts.Require().True(t2d.ExecutionUpdate.BlockNumber >= lastT2D)
+				if j > 0 {
+					ts.Require().True(t2d.ExecutionUpdate.BlockNumber >= ih.TrustedToDeterministic[j-1].ExecutionUpdate.BlockNumber)
+				}
+			}
+			for j, d2t := range ih.DeterministicToLatest {
+				if j > 0 {
+					ts.Require().True(d2t.ExecutionUpdate.BlockNumber >= ih.DeterministicToLatest[j-1].ExecutionUpdate.BlockNumber)
+				}
+				for _, t2d := range ih.TrustedToDeterministic {
+					ts.Require().True(d2t.ExecutionUpdate.BlockNumber >= t2d.ExecutionUpdate.BlockNumber)
+				}
+			}
+		}
+		if len(ih.TrustedToDeterministic) > 0 {
+			lastT2D = ih.TrustedToDeterministic[len(ih.TrustedToDeterministic)-1].ExecutionUpdate.BlockNumber
+		}
 	}
 	ts.Require().True(len(headers) > 0)
 	ts.Require().True(len(h.Preimages) > 0)
