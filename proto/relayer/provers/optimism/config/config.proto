@@ -8,15 +8,14 @@ import "gogoproto/gogo.proto";
 
 message ProverConfig {
   google.protobuf.Duration trusting_period = 1 [(gogoproto.nullable) = false, (gogoproto.stdduration) = true];
-  google.protobuf.Duration l1_max_clock_drift = 2 [(gogoproto.nullable) = false, (gogoproto.stdduration) = true];
-  google.protobuf.Duration l2_max_clock_drift = 3 [(gogoproto.nullable) = false, (gogoproto.stdduration) = true];
-  ibc.lightclients.ethereum.v1.Fraction refresh_threshold_rate = 4;
-  string op_node_endpoint = 5;
-  string l1_execution_endpoint = 6;
-  string l1_beacon_endpoint = 7;
-  string preimage_maker_endpoint = 8;
-  google.protobuf.Duration preimage_maker_timeout = 9 [(gogoproto.nullable) = false, (gogoproto.stdduration) = true];
-  map<string, uint64> minimal_fork_sched = 10;
-  uint64 max_l2nums_for_preimage = 11;
-  uint64 max_concurrent_preimage_requests = 12;
+  google.protobuf.Duration max_clock_drift = 2 [(gogoproto.nullable) = false, (gogoproto.stdduration) = true];
+  ibc.lightclients.ethereum.v1.Fraction refresh_threshold_rate = 3;
+  string op_node_endpoint = 4;
+  string l1_execution_endpoint = 5;
+  string l1_beacon_endpoint = 6;
+  string preimage_maker_endpoint = 7;
+  google.protobuf.Duration preimage_maker_timeout = 8 [(gogoproto.nullable) = false, (gogoproto.stdduration) = true];
+  map<string, uint64> minimal_fork_sched = 9;
+  uint64 max_l2nums_for_preimage = 10;
+  uint64 max_concurrent_preimage_requests = 11;
 }

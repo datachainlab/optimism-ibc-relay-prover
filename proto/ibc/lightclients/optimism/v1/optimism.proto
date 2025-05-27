@@ -32,13 +32,11 @@ message ClientState {
 
   ibc.core.client.v1.Height latest_height = 4;
 
-  google.protobuf.Duration max_clock_drift = 5 [(gogoproto.nullable) = false, (gogoproto.stdduration) = true];
+  bool frozen = 5;
 
-  bool frozen = 6;
+  bytes rollup_config_json = 6;
 
-  bytes rollup_config_json = 7;
-
-  L1Config l1_config = 8;
+  L1Config l1_config = 7;
 
 }
 
