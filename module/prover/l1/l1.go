@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/hyperledger-labs/yui-relayer/log"
 	"math/big"
+	"time"
 )
 
 type InitialState struct {
@@ -29,7 +30,7 @@ type L1Client struct {
 	config          *ProverConfig
 }
 
-func (pr *L1Client) BuildL1Config(state *InitialState) (*types.L1Config, error) {
+func (pr *L1Client) BuildL1Config(state *InitialState, maxClockDrift, trustingPeriod time.Duration) (*types.L1Config, error) {
 	return &types.L1Config{
 		GenesisValidatorsRoot:        state.Genesis.GenesisValidatorsRoot[:],
 		MinSyncCommitteeParticipants: 1,
@@ -42,6 +43,8 @@ func (pr *L1Client) BuildL1Config(state *InitialState) (*types.L1Config, error) 
 			Numerator:   2,
 			Denominator: 3,
 		},
+		MaxClockDrift:  maxClockDrift,
+		TrustingPeriod: trustingPeriod,
 	}, nil
 }
 

@@ -27,7 +27,8 @@ type Prover struct {
 
 	trustingPeriod       time.Duration
 	refreshThresholdRate *types.Fraction
-	maxClockDrift        time.Duration
+	l1MaxClockDrift      time.Duration
+	l2MaxClockDrift      time.Duration
 
 	codec codec.ProtoCodecMarshaler
 }
@@ -298,7 +299,7 @@ func (pr *Prover) CreateInitialLightClientState(ctx context.Context, height expo
 	if err != nil {
 		return nil, nil, err
 	}
-	l1Config, err := pr.l1Client.BuildL1Config(l1InitialState)
+	l1Config, err := pr.l1Client.BuildL1Config(l1InitialState, pr.l1MaxClockDrift, pr.trustingPeriod)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -313,8 +314,7 @@ func (pr *Prover) CreateInitialLightClientState(ctx context.Context, height expo
 		IbcStoreAddress:    pr.l2Client.Config().IBCAddress().Bytes(),
 		IbcCommitmentsSlot: l2.IBCCommitmentsSlot[:],
 		LatestHeight:       util.NewHeight(l2Number),
-		TrustingPeriod:     pr.trustingPeriod,
-		MaxClockDrift:      pr.maxClockDrift,
+		MaxClockDrift:      pr.l2MaxClockDrift,
 		Frozen:             false,
 		RollupConfigJson:   rollupConfig,
 		L1Config:           l1Config,
@@ -346,13 +346,16 @@ func NewProver(chain *ethereum.Chain,
 	l2Client *l2.L2Client,
 	trustingPeriod time.Duration,
 	refreshThresholdRate *types.Fraction,
-	maxClockDrift time.Duration) *Prover {
+	l1MaxClockDrift time.Duration,
+	l2MaxClockDrift time.Duration,
+) *Prover {
 	return &Prover{
 		l2Client:             l2Client,
 		l1Client:             l1Client,
 		trustingPeriod:       trustingPeriod,
 		refreshThresholdRate: refreshThresholdRate,
-		maxClockDrift:        maxClockDrift,
+		l1MaxClockDrift:      l1MaxClockDrift,
+		l2MaxClockDrift:      l2MaxClockDrift,
 		codec:                chain.Codec(),
 	}
 }

@@ -28,7 +28,7 @@ func (c *ProverConfig) Build(chain core.Chain) (core.Prover, error) {
 		c.MaxL2NumsForPreimage,
 		c.MaxConcurrentPreimageRequests,
 	)
-	return prover.NewProver(l2Chain, l1Client, l2Client, c.TrustingPeriod, c.RefreshThresholdRate, c.MaxClockDrift), nil
+	return prover.NewProver(l2Chain, l1Client, l2Client, c.TrustingPeriod, c.RefreshThresholdRate, c.L1MaxClockDrift, c.L2MaxClockDrift), nil
 }
 
 func (c *ProverConfig) Validate() error {
