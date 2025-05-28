@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"github.com/cockroachdb/errors"
 	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
-	ibcexported "github.com/cosmos/ibc-go/v8/modules/core/exported"
 	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/relay/ethereum"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/types"
 	lctypes "github.com/datachainlab/optimism-ibc-relay-prover/module/types"
@@ -69,15 +68,6 @@ func NewL2Client(chain *ethereum.Chain,
 		maxL2NumsForPreimage:          math.MaxU64(maxL2NumsForPreimage, 100),
 		maxConcurrentPreimageRequests: math.MaxU64(maxConcurrentPreimageRequests, 1),
 	}
-}
-
-func (c *L2Client) LatestFinalizedHeight(ctx context.Context) (ibcexported.Height, error) {
-	syncStatus, err := c.SyncStatus(ctx)
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
-	finalizedHeight := syncStatus.FinalizedL2.Number
-	return clienttypes.NewHeight(0, finalizedHeight), nil
 }
 
 type PreimageRequest struct {

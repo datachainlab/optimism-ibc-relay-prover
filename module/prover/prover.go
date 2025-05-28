@@ -83,15 +83,10 @@ func (pr *Prover) GetLatestFinalizedHeader(ctx context.Context) (latestFinalized
 	var l2Output *l2.OutputResponse
 	finalizedL2Number := syncStatus.FinalizedL2.Number
 	for {
-		l2Output, err = pr.l2Client.OutputAtBlock(ctx, finalizedL2Number)
+		deterministicL1Header, l2Output, err = pr.getDeterministicL1Header(ctx, finalizedL2Number)
 		if err != nil {
 			return nil, err
 		}
-		deterministicL1Header, err = pr.l1Client.GetConsensusHeaderByBlockNumber(ctx, l2Output.BlockRef.DeterministicFinalizedL1())
-		if err != nil {
-			return nil, err
-		}
-
 		if finalizedL1Header.ExecutionUpdate.BlockNumber >= deterministicL1Header.ExecutionUpdate.BlockNumber {
 			break
 		}
@@ -167,11 +162,7 @@ func (pr *Prover) SetupHeadersForUpdate(ctx context.Context, counterparty core.F
 	nextTrustedL1 := trustedL1BlockNumber
 	for _, h := range headers {
 		ih := h.(*types.Header)
-		output, err := pr.l2Client.OutputAtBlock(ctx, ih.Derivation.L2BlockNumber)
-		if err != nil {
-			return nil, err
-		}
-		deterministicL1, err := pr.l1Client.GetConsensusHeaderByBlockNumber(ctx, output.BlockRef.DeterministicFinalizedL1())
+		deterministicL1, _, err := pr.getDeterministicL1Header(ctx, ih.Derivation.L2BlockNumber)
 		if err != nil {
 			return nil, err
 		}
@@ -212,30 +203,27 @@ func (pr *Prover) CheckRefreshRequired(ctx context.Context, counterparty core.Ch
 	}
 
 	var cs exported.ClientState
-	if err := pr.codec.UnpackAny(resCs.ClientState, &cs); err != nil {
+	if err = pr.codec.UnpackAny(resCs.ClientState, &cs); err != nil {
 		return false, fmt.Errorf("failed to unpack Any into tendermint client state: %v", err)
 	}
 
-	resCons, err := counterparty.QueryClientConsensusState(cpQueryCtx, cs.GetLatestHeight())
+	// Get trusted 1 timestamp
+	trustedL1Header, _, err := pr.getDeterministicL1Header(ctx, cs.GetLatestHeight().GetRevisionHeight())
 	if err != nil {
-		return false, fmt.Errorf("failed to query the consensus state on the counterparty chain: %v", err)
+		return false, fmt.Errorf("failed to get trusted l1 header: %v", err)
 	}
+	lcLastTimestamp := time.Unix(int64(trustedL1Header.Timestamp), 0)
 
-	var cons exported.ConsensusState
-	if err := pr.codec.UnpackAny(resCons.ConsensusState, &cons); err != nil {
-		return false, fmt.Errorf("failed to unpack Any into tendermint consensus state: %v", err)
-	}
-	lcLastTimestamp := time.Unix(0, int64(cons.GetTimestamp()))
-
-	selfQueryHeight, err := pr.l2Client.LatestFinalizedHeight(ctx)
+	// Get latest l1 timestamp on chain
+	syncStatus, err := pr.l2Client.SyncStatus(ctx)
 	if err != nil {
 		return false, fmt.Errorf("failed to get the latest height of the self chain: %v", err)
 	}
-
-	selfTimestamp, err := pr.l2Client.Timestamp(ctx, selfQueryHeight)
+	latestL1Header, _, err := pr.getDeterministicL1Header(ctx, syncStatus.FinalizedL2.DeterministicFinalizedL1())
 	if err != nil {
-		return false, fmt.Errorf("failed to get timestamp of the self chain: %v", err)
+		return false, fmt.Errorf("failed to get latest l1 header: %v", err)
 	}
+	selfTimestamp := time.Unix(int64(latestL1Header.Timestamp), 0)
 
 	elapsedTime := selfTimestamp.Sub(lcLastTimestamp)
 
@@ -257,15 +245,11 @@ func (pr *Prover) CreateInitialLightClientState(ctx context.Context, height expo
 	var l1Number uint64
 	if height != nil {
 		l2Number = height.GetRevisionHeight()
-		trustedOutput, err := pr.l2Client.OutputAtBlock(ctx, l2Number)
+		l1Header, trustedOutput, err := pr.getDeterministicL1Header(ctx, l2Number)
 		if err != nil {
 			return nil, nil, err
 		}
 		l2OutputRoot = trustedOutput.OutputRoot[:]
-		l1Header, err := pr.l1Client.GetConsensusHeaderByBlockNumber(ctx, trustedOutput.BlockRef.DeterministicFinalizedL1())
-		if err != nil {
-			return nil, nil, err
-		}
 		l1Number = l1Header.ExecutionUpdate.BlockNumber
 	} else {
 		finalized, err := pr.GetLatestFinalizedHeader(ctx)
@@ -337,6 +321,18 @@ func (pr *Prover) SetRelayInfo(path *core.PathEnd, counterparty *core.ProvableCh
 // SetupForRelay performs chain-specific setup before starting the relay
 func (pr *Prover) SetupForRelay(ctx context.Context) error {
 	return nil
+}
+
+func (pr *Prover) getDeterministicL1Header(ctx context.Context, l2Number uint64) (*types.L1Header, *l2.OutputResponse, error) {
+	l2Output, err := pr.l2Client.OutputAtBlock(ctx, l2Number)
+	if err != nil {
+		return nil, nil, err
+	}
+	l1Header, err := pr.l1Client.GetConsensusHeaderByBlockNumber(ctx, l2Output.BlockRef.DeterministicFinalizedL1())
+	if err != nil {
+		return nil, nil, err
+	}
+	return l1Header, l2Output, nil
 }
 
 func NewProver(chain *ethereum.Chain,
