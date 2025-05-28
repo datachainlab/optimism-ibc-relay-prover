@@ -219,7 +219,7 @@ func (pr *Prover) CheckRefreshRequired(ctx context.Context, counterparty core.Ch
 	if err != nil {
 		return false, fmt.Errorf("failed to get the latest height of the self chain: %v", err)
 	}
-	latestL1Header, _, err := pr.getDeterministicL1Header(ctx, syncStatus.FinalizedL2.DeterministicFinalizedL1())
+	latestL1Header, _, err := pr.getDeterministicL1Header(ctx, syncStatus.FinalizedL2.Number)
 	if err != nil {
 		return false, fmt.Errorf("failed to get latest l1 header: %v", err)
 	}

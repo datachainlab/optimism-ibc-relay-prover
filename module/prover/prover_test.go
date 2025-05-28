@@ -194,6 +194,52 @@ func (ts *ProverTestSuite) TestSetupHeadersForUpdateLong() {
 	}
 }
 
+func (ts *ProverTestSuite) TestCheckRefreshRequired() {
+
+	ts.prover.trustingPeriod = 1 * time.Second
+	ts.prover.refreshThresholdRate = &types.Fraction{
+		Numerator:   1,
+		Denominator: 1,
+	}
+
+	ctx := context.Background()
+
+	// Make dummy client state
+	chain := &mockChain{
+		Chain: ts.prover.l2Client.Chain,
+		mockClientState: &clienttypes.QueryClientStateResponse{
+			ClientState: nil,
+		},
+	}
+
+	// Not refresh because of trusted l1 = latest l1
+	latest, err := ts.prover.l2Client.SyncStatus(ctx)
+	ts.Require().NoError(err)
+	trustedHeight := clienttypes.NewHeight(0, latest.FinalizedL2.Number)
+	protoClientState, err := codectypes.NewAnyWithValue(exported.ClientState(&types2.ClientState{
+		LatestHeight: &trustedHeight,
+	}).(proto.Message))
+	ts.Require().NoError(err)
+	chain.mockClientState.ClientState = protoClientState
+
+	required, err := ts.prover.CheckRefreshRequired(ctx, chain)
+	ts.Require().NoError(err)
+	ts.Require().False(required)
+
+	// should refresh by block difference
+	trustedHeight = clienttypes.NewHeight(0, latest.FinalizedL2.Number-200)
+	protoClientState, err = codectypes.NewAnyWithValue(exported.ClientState(&types2.ClientState{
+		LatestHeight: &trustedHeight,
+	}).(proto.Message))
+	ts.Require().NoError(err)
+	chain.mockClientState.ClientState = protoClientState
+
+	required, err = ts.prover.CheckRefreshRequired(ctx, chain)
+	ts.Require().NoError(err)
+	ts.Require().True(required)
+
+}
+
 func (ts *ProverTestSuite) setupHeadersForUpdate(latestToTrusted uint64) ([]core.Header, clienttypes.Height) {
 	latest, err := ts.prover.GetLatestFinalizedHeader(context.Background())
 	ts.Require().NoError(err)
