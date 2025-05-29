@@ -400,13 +400,13 @@ func (pr *Prover) makeHeaderChan(ctx context.Context, requests []*HeaderChunk, f
 	sem := make(chan struct{}, pr.maxHeaderConcurrency)
 
 	resultBuffer := make([]*core.HeaderOrError, len(requests))
-	notify := make(chan struct{})
+	notify := make(chan struct{}, 1)
 
 	go func() {
 		for i, chunk := range requests {
+			// block over concurrency
 			sem <- struct{}{}
 			go func(index int, chunk *HeaderChunk) {
-				defer func() { <-sem }()
 
 				ret, err := fn(ctx, chunk)
 
@@ -415,7 +415,7 @@ func (pr *Prover) makeHeaderChan(ctx context.Context, requests []*HeaderChunk, f
 					Error:  err,
 				}
 
-				// notify complete
+				// notify completion
 				select {
 				case notify <- struct{}{}:
 				default: // nonblocking and ignore duplicate notifications
@@ -443,6 +443,9 @@ func (pr *Prover) makeHeaderChan(ctx context.Context, requests []*HeaderChunk, f
 				}
 
 				out <- res
+
+				// release semaphore after res is delivered
+				<-sem
 
 				// enable to receive next sequence
 				sequence++

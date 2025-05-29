@@ -315,7 +315,7 @@ func (ts *ProverTestSuite) TestMakeHeaderChan() {
 	}
 
 	ret := ts.prover.makeHeaderChan(context.Background(), headerChunks, func(ctx context.Context, header *HeaderChunk) (core.Header, error) {
-		time.Sleep(time.Duration(3 * time.Second))
+		time.Sleep(3 * time.Second)
 		println("run header", header.ClaimingOutput.BlockRef.Number)
 		return &types.Header{
 			Derivation: &types.Derivation{
