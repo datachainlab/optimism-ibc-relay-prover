@@ -92,10 +92,9 @@ func (ts *ProverTestSuite) SetupTest() {
 	l1BeaconEndpoint := fmt.Sprintf("http://localhost:%d", hostPort.L1BeaconPort)
 	preimageMakerEndpoint := "http://localhost:10080"
 	preimageMakerTimeout := 300 * time.Second
-	l1Client, err := l1.NewL1Client(context.Background(), l1BeaconEndpoint, l1ExecutionEndpoint)
-	ts.Require().NoError(err)
-	l2Client := l2.NewL2Client(l2Chain, l1ExecutionEndpoint, preimageMakerTimeout, preimageMakerEndpoint, opNodeEndpoint, 100, 4)
-	ts.prover = NewProver(l2Chain, l1Client, l2Client, trustingPeriod, refreshThresholdRate, maxClockDrift)
+	l1Client, _ := l1.NewL1Client(context.Background(), l1BeaconEndpoint, l1ExecutionEndpoint)
+	l2Client := l2.NewL2Client(l2Chain, l1ExecutionEndpoint, preimageMakerTimeout, preimageMakerEndpoint, opNodeEndpoint)
+	ts.prover = NewProver(l2Chain, l1Client, l2Client, trustingPeriod, refreshThresholdRate, maxClockDrift, 4, 100)
 }
 
 func (ts *ProverTestSuite) TestCreateInitialLightClientState() {
@@ -260,8 +259,15 @@ func (ts *ProverTestSuite) setupHeadersForUpdate(latestToTrusted uint64) ([]core
 			ClientState: protoClientState,
 		},
 	}
-	headers, err := ts.prover.SetupHeadersForUpdate(context.Background(), chain, latest)
+	headersChunk, err := ts.prover.SetupHeadersForUpdate(context.Background(), chain, latest)
 	ts.Require().NoError(err)
+
+	// Drain all the headers
+	headers := make([]core.Header, 0, len(headersChunk))
+	for chunk := range headersChunk {
+		ts.Require().NoError(chunk.Error)
+		headers = append(headers, chunk.Header)
+	}
 
 	nextTrusted := trustedHeight.RevisionHeight
 	lastT2D := uint64(0)
@@ -294,6 +300,40 @@ func (ts *ProverTestSuite) setupHeadersForUpdate(latestToTrusted uint64) ([]core
 	ts.Require().True(len(headers) > 0)
 	ts.Require().True(len(h.Preimages) > 0)
 	return headers, trustedHeight
+}
+
+func (ts *ProverTestSuite) TestMakeHeaderChan() {
+	headerChunks := make([]*HeaderChunk, 100)
+	for i := 0; i < len(headerChunks); i++ {
+		headerChunks[i] = &HeaderChunk{
+			ClaimingOutput: &l2.OutputResponse{
+				BlockRef: l2.L2BlockRef{
+					Number: uint64(i + 1),
+				},
+			},
+		}
+	}
+
+	ret := ts.prover.makeHeaderChan(context.Background(), headerChunks, func(ctx context.Context, header *HeaderChunk) (core.Header, error) {
+		time.Sleep(time.Duration(3 * time.Second))
+		println("run header", header.ClaimingOutput.BlockRef.Number)
+		return &types.Header{
+			Derivation: &types.Derivation{
+				L2BlockNumber: header.ClaimingOutput.BlockRef.Number,
+			},
+		}, nil
+	})
+
+	println("wait for chan result")
+	next := uint64(0)
+	for chunk := range ret {
+		next++
+		ts.Require().NoError(chunk.Error)
+		h := chunk.Header.(*types.Header)
+		ts.Require().Equal(h.Derivation.L2BlockNumber, next)
+		println("finish", next)
+	}
+	ts.Require().Equal(next, uint64(len(headerChunks)))
 }
 
 type mockChain struct {

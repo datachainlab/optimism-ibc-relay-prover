@@ -28,6 +28,8 @@ type Prover struct {
 	trustingPeriod       time.Duration
 	refreshThresholdRate *types.Fraction
 	maxClockDrift        time.Duration
+	maxHeaderConcurrency uint64
+	maxL2NumsForPreimage uint64
 
 	codec codec.ProtoCodecMarshaler
 }
@@ -119,7 +121,7 @@ func (pr *Prover) GetLatestFinalizedHeader(ctx context.Context) (latestFinalized
 	return header, nil
 }
 
-func (pr *Prover) SetupHeadersForUpdate(ctx context.Context, counterparty core.FinalityAwareChain, latestFinalizedHeader core.Header) ([]core.Header, error) {
+func (pr *Prover) SetupHeadersForUpdate(ctx context.Context, counterparty core.FinalityAwareChain, latestFinalizedHeader core.Header) (<-chan *core.HeaderOrError, error) {
 	latest := latestFinalizedHeader.(*types.Header)
 
 	latestHeightOnDstChain, err := counterparty.LatestHeight(ctx)
@@ -155,39 +157,51 @@ func (pr *Prover) SetupHeadersForUpdate(ctx context.Context, counterparty core.F
 	}
 	trustedL1BlockNumber := trustedOutput.BlockRef.DeterministicFinalizedL1()
 	latestL1 := latest.DeterministicToLatest[1]
-	headers, err := pr.l2Client.SplitHeaders(ctx, trustedOutput, latest, latestL1)
+	headerChunk, err := pr.splitHeaders(ctx, trustedL1BlockNumber, trustedOutput, latest)
 	if err != nil {
 		return nil, err
 	}
-	nextTrustedL1 := trustedL1BlockNumber
-	for _, h := range headers {
-		ih := h.(*types.Header)
-		deterministicL1, _, err := pr.getDeterministicL1Header(ctx, ih.Derivation.L2BlockNumber)
-		if err != nil {
-			return nil, err
-		}
-		ih.TrustedToDeterministic, err = pr.l1Client.GetSyncCommitteesFromTrustedToLatest(ctx, nextTrustedL1, deterministicL1)
-		if err != nil {
-			return nil, err
-		}
-		ih.DeterministicToLatest, err = pr.l1Client.GetSyncCommitteesFromTrustedToLatest(ctx, deterministicL1.ExecutionUpdate.BlockNumber, latestL1)
-		if err != nil {
-			return nil, err
-		}
-		nextTrustedL1 = deterministicL1.ExecutionUpdate.BlockNumber
+	logger := pr.GetLogger()
 
-	}
-	for _, h := range headers {
-		ih := h.(*types.Header)
+	return pr.makeHeaderChan(ctx, headerChunk, func(ctx context.Context, chunk *HeaderChunk) (core.Header, error) {
+		ih := &types.Header{}
+		ih.AccountUpdate, err = pr.l2Client.BuildAccountUpdate(ctx, chunk.ClaimingOutput.BlockRef.Number)
+		if err != nil {
+			return nil, err
+		}
+		ih.TrustedToDeterministic, err = pr.l1Client.GetSyncCommitteesFromTrustedToLatest(ctx, chunk.TrustedL1Number, chunk.DeterministicL1)
+		if err != nil {
+			return nil, err
+		}
+		ih.DeterministicToLatest, err = pr.l1Client.GetSyncCommitteesFromTrustedToLatest(ctx, chunk.DeterministicL1.ExecutionUpdate.BlockNumber, latestL1)
+		if err != nil {
+			return nil, err
+		}
+
+		logger.Info("start preimageRequest", "l2", chunk.ClaimingOutput.BlockRef.Number)
+		preimage, err := pr.l2Client.CreatePreimages(ctx, &l2.PreimageRequest{
+			L1HeadHash:         common.BytesToHash(latestL1.ExecutionUpdate.BlockHash),
+			AgreedL2HeadHash:   chunk.TrustedOutput.BlockRef.Hash,
+			AgreedL2OutputRoot: common.BytesToHash(chunk.TrustedOutput.OutputRoot[:]),
+			L2OutputRoot:       common.BytesToHash(chunk.ClaimingOutput.OutputRoot[:]),
+			L2BlockNumber:      chunk.ClaimingOutput.BlockRef.Number,
+		})
+		if err != nil {
+			return nil, err
+		}
+		logger.Info("success preimageRequest", "l2", chunk.ClaimingOutput.BlockRef.Number, "preimageSize", len(preimage))
+		ih.Preimages = preimage
+
 		trustedToDeterministicNums := util.Map(ih.TrustedToDeterministic, func(item *types.L1Header, index int) string {
 			return fmt.Sprintf("%d/%t", item.ConsensusUpdate.FinalizedHeader.Slot, item.TrustedSyncCommittee.IsNext)
 		})
 		deterministicToLatestNums := util.Map(ih.DeterministicToLatest, func(item *types.L1Header, index int) string {
 			return fmt.Sprintf("%d/%t", item.ConsensusUpdate.FinalizedHeader.Slot, item.TrustedSyncCommittee.IsNext)
 		})
-		pr.GetLogger().Info("targetHeaders", "l2", ih.Derivation.L2BlockNumber, "trusted_l2", ih.TrustedHeight.GetRevisionHeight(), "l1_t2d", trustedToDeterministicNums, "l1_d2l", deterministicToLatestNums, "preimages", len(ih.Preimages))
-	}
-	return headers, nil
+		logger.Info("targetHeader", "l2", ih.Derivation.L2BlockNumber, "trusted_l2", ih.TrustedHeight.GetRevisionHeight(), "l1_t2d", trustedToDeterministicNums, "l1_d2l", deterministicToLatestNums, "preimages", len(ih.Preimages))
+
+		return ih, nil
+	}), nil
 }
 
 func (pr *Prover) CheckRefreshRequired(ctx context.Context, counterparty core.ChainInfoICS02Querier) (bool, error) {
@@ -335,19 +349,130 @@ func (pr *Prover) getDeterministicL1Header(ctx context.Context, l2Number uint64)
 	return l1Header, l2Output, nil
 }
 
+type HeaderChunk struct {
+	TrustedOutput   *l2.OutputResponse
+	TrustedL1Number uint64
+	ClaimingOutput  *l2.OutputResponse
+	DeterministicL1 *types.L1Header
+}
+
+func (pr *Prover) splitHeaders(ctx context.Context, trustedL1BlockNumber uint64, trustedL2 *l2.OutputResponse, latestHeader *types.Header) ([]*HeaderChunk, error) {
+	logger := log.GetLogger()
+
+	l2Numbers := make([]uint64, 0)
+	logger.Info("split headers for ", "trustedL2", trustedL2.BlockRef.Number, "latestL2Header", latestHeader.Derivation.L2BlockNumber)
+
+	for start := trustedL2.BlockRef.Number + pr.maxL2NumsForPreimage; start < latestHeader.Derivation.L2BlockNumber; start += pr.maxL2NumsForPreimage {
+		l2Numbers = append(l2Numbers, start)
+	}
+	l2Numbers = append(l2Numbers, latestHeader.Derivation.L2BlockNumber)
+
+	nextTrustedL2 := trustedL2
+	nextTrustedL1 := trustedL1BlockNumber
+
+	chunk := make([]*HeaderChunk, len(l2Numbers))
+	for i, l2Number := range l2Numbers {
+		deterministicL1, claimingOutput, err := pr.getDeterministicL1Header(ctx, l2Number)
+		if err != nil {
+			return nil, err
+		}
+		chunk[i] = &HeaderChunk{
+			TrustedOutput:   nextTrustedL2,
+			TrustedL1Number: nextTrustedL1,
+			DeterministicL1: deterministicL1,
+			ClaimingOutput:  claimingOutput,
+		}
+		logger.Info("header chunk",
+			"l2", chunk[i].ClaimingOutput.BlockRef.Number,
+			"trusted_l2", chunk[i].TrustedOutput.BlockRef.Number,
+			"trusted_l1_num", chunk[i].TrustedL1Number,
+			"deterministic_l1_num", chunk[i].DeterministicL1.ExecutionUpdate.BlockNumber,
+			"deterministic_l1_slot", chunk[i].DeterministicL1.ConsensusUpdate.FinalizedHeader.Slot,
+		)
+		nextTrustedL2 = claimingOutput
+		nextTrustedL1 = deterministicL1.ExecutionUpdate.BlockNumber
+	}
+	return chunk, nil
+}
+
+func (pr *Prover) makeHeaderChan(ctx context.Context, requests []*HeaderChunk, fn func(context.Context, *HeaderChunk) (core.Header, error)) <-chan *core.HeaderOrError {
+	out := make(chan *core.HeaderOrError, pr.maxHeaderConcurrency)
+	sem := make(chan struct{}, pr.maxHeaderConcurrency)
+
+	resultBuffer := make([]*core.HeaderOrError, len(requests))
+	notify := make(chan struct{})
+
+	go func() {
+		for i, chunk := range requests {
+			sem <- struct{}{}
+			go func(index int, chunk *HeaderChunk) {
+				defer func() { <-sem }()
+
+				ret, err := fn(ctx, chunk)
+
+				resultBuffer[index] = &core.HeaderOrError{
+					Header: ret,
+					Error:  err,
+				}
+
+				// notify complete
+				select {
+				case notify <- struct{}{}:
+				default: // nonblocking and ignore duplicate notifications
+				}
+			}(i, chunk)
+		}
+	}()
+
+	// wait sequence of results
+	go func() {
+		defer close(out)
+		sequence := 0
+		for sequence < len(requests) {
+			// receive completion.
+			<-notify
+
+			for sequence < len(requests) {
+
+				//get result for current sequence
+				res := resultBuffer[sequence]
+
+				if res == nil {
+					// not ready for current sequence
+					break
+				}
+
+				out <- res
+
+				// enable to receive next sequence
+				sequence++
+			}
+		}
+	}()
+
+	return out
+}
+
 func NewProver(chain *ethereum.Chain,
 	l1Client *l1.L1Client,
 	l2Client *l2.L2Client,
 	trustingPeriod time.Duration,
 	refreshThresholdRate *types.Fraction,
 	maxClockDrift time.Duration,
+	maxHeaderConcurrency uint64,
+	maxL2NumsForPreimage uint64,
 ) *Prover {
+	if maxL2NumsForPreimage == 0 {
+		maxL2NumsForPreimage = 100
+	}
 	return &Prover{
 		l2Client:             l2Client,
 		l1Client:             l1Client,
 		trustingPeriod:       trustingPeriod,
 		refreshThresholdRate: refreshThresholdRate,
 		maxClockDrift:        maxClockDrift,
+		maxHeaderConcurrency: max(maxHeaderConcurrency, 1),
+		maxL2NumsForPreimage: maxL2NumsForPreimage,
 		codec:                chain.Codec(),
 	}
 }
