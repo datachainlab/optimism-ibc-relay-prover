@@ -7,17 +7,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/cockroachdb/errors"
-	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
 	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/relay/ethereum"
-	"github.com/datachainlab/optimism-ibc-relay-prover/module/types"
 	lctypes "github.com/datachainlab/optimism-ibc-relay-prover/module/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/hyperledger-labs/yui-relayer/core"
 	"github.com/hyperledger-labs/yui-relayer/log"
-	"github.com/protolambda/zrnt/eth2/util/math"
-	"golang.org/x/sync/errgroup"
 	"io"
 	"math/big"
 	"net/http"
@@ -39,12 +34,10 @@ type DerivationL2Attribute struct {
 
 type L2Client struct {
 	*ethereum.Chain
-	l1ExecutionClient             *ethclient.Client
-	preimageMakerTimeout          time.Duration
-	preimageMakerEndpoint         string
-	opNodeEndpoint                string
-	maxL2NumsForPreimage          uint64
-	maxConcurrentPreimageRequests uint64
+	l1ExecutionClient     *ethclient.Client
+	preimageMakerTimeout  time.Duration
+	preimageMakerEndpoint string
+	opNodeEndpoint        string
 }
 
 func NewL2Client(chain *ethereum.Chain,
@@ -52,21 +45,17 @@ func NewL2Client(chain *ethereum.Chain,
 	preimageMakerTimeout time.Duration,
 	preimageMakerEndpoint string,
 	opNodeEndpoint string,
-	maxL2NumsForPreimage uint64,
-	maxConcurrentPreimageRequests uint64,
 ) *L2Client {
 	l1ExecutionClient, err := ethclient.Dial(l1ExecutionEndpoint)
 	if err != nil {
 		panic(err)
 	}
 	return &L2Client{
-		Chain:                         chain,
-		l1ExecutionClient:             l1ExecutionClient,
-		preimageMakerTimeout:          preimageMakerTimeout,
-		preimageMakerEndpoint:         preimageMakerEndpoint,
-		opNodeEndpoint:                opNodeEndpoint,
-		maxL2NumsForPreimage:          math.MaxU64(maxL2NumsForPreimage, 100),
-		maxConcurrentPreimageRequests: math.MaxU64(maxConcurrentPreimageRequests, 1),
+		Chain:                 chain,
+		l1ExecutionClient:     l1ExecutionClient,
+		preimageMakerTimeout:  preimageMakerTimeout,
+		preimageMakerEndpoint: preimageMakerEndpoint,
+		opNodeEndpoint:        opNodeEndpoint,
 	}
 }
 
@@ -150,121 +139,4 @@ func (c *L2Client) BuildStateProof(ctx context.Context, path []byte, height int6
 		return nil, err
 	}
 	return stateProof.StorageProofRLP[0], nil
-}
-
-type headerWithPreimageRequest struct {
-	Header          *types.Header
-	PreimageRequest *PreimageRequest
-}
-
-// SplitHeaders splits the headers between the trusted L2 block and the latest L2 block.
-// It iterates through the blocks, creating account updates, generating preimages, and constructing headers.
-func (c *L2Client) SplitHeaders(ctx context.Context, trustedL2 *OutputResponse, latestHeader *types.Header, latestL1Header *types.L1Header) ([]core.Header, error) {
-	logger := log.GetLogger()
-	var targetHeaders []core.Header
-
-	nextTrusted := trustedL2
-	logger.Info("split headers for ", "trustedL2", trustedL2.BlockRef.Number, "latestL2Header", latestHeader.Derivation.L2BlockNumber)
-
-	preimageRequests := make([]*headerWithPreimageRequest, 0)
-	for start := trustedL2.BlockRef.Number + c.maxL2NumsForPreimage; start < latestHeader.Derivation.L2BlockNumber; start += c.maxL2NumsForPreimage {
-		accountUpdate, err := c.BuildAccountUpdate(ctx, start)
-		if err != nil {
-			return nil, err
-		}
-
-		claimingOutput, err := c.OutputAtBlock(ctx, start)
-		if err != nil {
-			return nil, err
-		}
-
-		// set up header
-		t := clienttypes.NewHeight(latestHeader.GetHeight().GetRevisionNumber(), nextTrusted.BlockRef.Number)
-		header := &types.Header{
-			TrustedHeight: &t,
-			AccountUpdate: accountUpdate,
-			Derivation: &types.Derivation{
-				AgreedL2OutputRoot: nextTrusted.OutputRoot[:],
-				L2OutputRoot:       claimingOutput.OutputRoot[:],
-				L2BlockNumber:      claimingOutput.BlockRef.Number,
-			},
-		}
-
-		targetHeaders = append(targetHeaders, header)
-
-		// Later concurrent preimage call
-		preimageRequests = append(preimageRequests, &headerWithPreimageRequest{
-			Header: header,
-			PreimageRequest: &PreimageRequest{
-				L1HeadHash:         common.BytesToHash(latestL1Header.ExecutionUpdate.BlockHash),
-				AgreedL2HeadHash:   nextTrusted.BlockRef.Hash,
-				AgreedL2OutputRoot: common.BytesToHash(nextTrusted.OutputRoot[:]),
-				L2OutputRoot:       common.BytesToHash(claimingOutput.OutputRoot[:]),
-				L2BlockNumber:      claimingOutput.BlockRef.Number,
-			},
-		})
-
-		// set up next loop
-		nextTrusted = claimingOutput
-	}
-
-	// set up latest header
-	t := clienttypes.NewHeight(latestHeader.GetHeight().GetRevisionNumber(), nextTrusted.BlockRef.Number)
-	latestHeader.TrustedHeight = &t
-	latestHeader.Derivation.AgreedL2OutputRoot = nextTrusted.OutputRoot[:]
-	targetHeaders = append(targetHeaders, latestHeader)
-
-	// Later concurrent preimage call
-	preimageRequests = append(preimageRequests, &headerWithPreimageRequest{
-		Header: latestHeader,
-		PreimageRequest: &PreimageRequest{
-			L1HeadHash:         common.BytesToHash(latestL1Header.ExecutionUpdate.BlockHash),
-			AgreedL2HeadHash:   nextTrusted.BlockRef.Hash,
-			AgreedL2OutputRoot: common.BytesToHash(nextTrusted.OutputRoot[:]),
-			L2OutputRoot:       common.BytesToHash(latestHeader.Derivation.L2OutputRoot[:]),
-			L2BlockNumber:      latestHeader.Derivation.L2BlockNumber,
-		},
-	})
-
-	// set preimage data
-	if err := c.setPreimageDataIntoHeaders(ctx, preimageRequests); err != nil {
-		return nil, errors.WithStack(err)
-	}
-	return targetHeaders, nil
-
-}
-
-func (c *L2Client) setPreimageDataIntoHeaders(ctx context.Context, headers []*headerWithPreimageRequest) error {
-	logger := log.GetLogger()
-	for _, header := range headers {
-		logger.Info("target preimageRequest", "l2", header.PreimageRequest.L2BlockNumber)
-	}
-	return callAndWaitParallel(ctx, headers, c.maxConcurrentPreimageRequests, func(ctx context.Context, r *headerWithPreimageRequest) error {
-		logger.Info("start preimageRequest", "l2", r.PreimageRequest.L2BlockNumber)
-		preimageData, err := c.CreatePreimages(ctx, r.PreimageRequest)
-		if err != nil {
-			return errors.Wrapf(err, "failed to create preimages for L2 header %d", r.PreimageRequest.L2BlockNumber)
-		}
-		logger.Info("success preimageRequest", "l2", r.PreimageRequest.L2BlockNumber, "preimageSize", len(preimageData))
-		r.Header.Preimages = preimageData
-		return nil
-	})
-}
-
-func callAndWaitParallel[T any](ctx context.Context, requests []*T, maxConcurrency uint64, fn func(ctx context.Context, r *T) error) error {
-	sem := make(chan struct{}, maxConcurrency)
-	g, ctx := errgroup.WithContext(ctx)
-
-	for _, header := range requests {
-		sem <- struct{}{}
-		g.Go(func() error {
-			defer func() { <-sem }()
-			return fn(ctx, header)
-		})
-	}
-
-	if err := g.Wait(); err != nil {
-		return err
-	}
-	return nil
 }

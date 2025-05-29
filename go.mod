@@ -10,18 +10,16 @@ require (
 	github.com/datachainlab/ethereum-ibc-relay-chain v0.3.17
 	github.com/datachainlab/ibc-hd-signer v0.1.2
 	github.com/ethereum/go-ethereum v1.14.12
-	github.com/hyperledger-labs/yui-relayer v0.5.11
+	github.com/hyperledger-labs/yui-relayer v0.5.14-0.20250529093019-420ac95bb98a
 	github.com/spf13/cobra v1.8.0
 	google.golang.org/protobuf v1.35.2
 )
 
 require (
 	github.com/cockroachdb/errors v1.11.3
-	github.com/protolambda/zrnt v0.32.2
 	github.com/prysmaticlabs/fastssz v0.0.0-20241008181541-518c4ce73516
 	github.com/prysmaticlabs/prysm/v5 v5.2.0
 	github.com/stretchr/testify v1.10.0
-	golang.org/x/sync v0.10.0
 )
 
 require (
@@ -225,6 +223,7 @@ require (
 	golang.org/x/exp v0.0.0-20240808152545-0cdaa3abc0fa // indirect
 	golang.org/x/net v0.32.0 // indirect
 	golang.org/x/oauth2 v0.24.0 // indirect
+	golang.org/x/sync v0.10.0 // indirect
 	golang.org/x/sys v0.28.0 // indirect
 	golang.org/x/term v0.27.0 // indirect
 	golang.org/x/text v0.21.0 // indirect
