@@ -14,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/hyperledger-labs/yui-relayer/core"
 	"github.com/hyperledger-labs/yui-relayer/log"
-	"sync"
 	"time"
 )
 
@@ -397,27 +396,42 @@ func (pr *Prover) splitHeaders(ctx context.Context, trustedL1BlockNumber uint64,
 }
 
 func (pr *Prover) makeHeaderChan(ctx context.Context, requests []*HeaderChunk, fn func(context.Context, *HeaderChunk) (core.Header, error)) <-chan *core.HeaderOrError {
-	chunkGroups := util.Group(requests, int(pr.maxHeaderConcurrency))
-	out := make(chan *core.HeaderOrError, pr.maxHeaderConcurrency)
-	go func() {
-		for _, chunkGroup := range chunkGroups {
-			buffer := make([]*core.HeaderOrError, len(chunkGroup))
-			wg := sync.WaitGroup{}
-			for i, chunk := range chunkGroup {
-				wg.Add(1)
-				go func(index int, chunk *HeaderChunk) {
-					defer wg.Done()
-					ret, err := fn(ctx, chunk)
+	out := make(chan *core.HeaderOrError)
+	sem := make(chan struct{}, pr.maxHeaderConcurrency)
+	done := make(chan struct{}, pr.maxHeaderConcurrency)
+	buffer := make([]*core.HeaderOrError, len(requests))
 
-					buffer[index] = &core.HeaderOrError{
-						Header: ret,
-						Error:  err,
-					}
-				}(i, chunk)
-			}
-			wg.Wait()
-			for _, res := range buffer {
-				out <- res
+	// start worker
+	go func() {
+		for i, chunk := range requests {
+			// block if the number of concurrent workers reaches maxHeaderConcurrency
+			sem <- struct{}{}
+			go func(index int, chunk *HeaderChunk) {
+				ret, err := fn(ctx, chunk)
+				buffer[index] = &core.HeaderOrError{
+					Header: ret,
+					Error:  err,
+				}
+				done <- struct{}{}
+			}(i, chunk)
+		}
+	}()
+
+	// start deliverer
+	go func() {
+		defer close(out)
+		sequence := 0
+		for sequence < len(requests) {
+			<-done
+			for sequence < len(requests) && buffer[sequence] != nil {
+				result := buffer[sequence]
+				pr.GetLogger().Debug("deliver header", "sequence", sequence, "l2", result.Header.GetHeight())
+				// Always deliver in order from zero.
+				out <- result
+				sequence++
+				// Allow next worker to start only when the collect sequence is delivered.
+				// If it is released on the worker side, the number of tasks will significantly exceed the number of concurrent executions when lcp-go takes a long time.
+				<-sem
 			}
 		}
 	}()
