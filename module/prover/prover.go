@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/hyperledger-labs/yui-relayer/core"
 	"github.com/hyperledger-labs/yui-relayer/log"
+	"sync"
 	"time"
 )
 
@@ -396,63 +397,30 @@ func (pr *Prover) splitHeaders(ctx context.Context, trustedL1BlockNumber uint64,
 }
 
 func (pr *Prover) makeHeaderChan(ctx context.Context, requests []*HeaderChunk, fn func(context.Context, *HeaderChunk) (core.Header, error)) <-chan *core.HeaderOrError {
+	chunkGroups := util.Group(requests, int(pr.maxHeaderConcurrency))
 	out := make(chan *core.HeaderOrError, pr.maxHeaderConcurrency)
-	sem := make(chan struct{}, pr.maxHeaderConcurrency)
-
-	resultBuffer := make([]*core.HeaderOrError, len(requests))
-	notify := make(chan struct{}, 1)
-
 	go func() {
-		for i, chunk := range requests {
-			// block over concurrency
-			sem <- struct{}{}
-			go func(index int, chunk *HeaderChunk) {
+		for _, chunkGroup := range chunkGroups {
+			buffer := make([]*core.HeaderOrError, len(chunkGroup))
+			wg := sync.WaitGroup{}
+			for i, chunk := range chunkGroup {
+				wg.Add(1)
+				go func(index int, chunk *HeaderChunk) {
+					defer wg.Done()
+					ret, err := fn(ctx, chunk)
 
-				ret, err := fn(ctx, chunk)
-
-				resultBuffer[index] = &core.HeaderOrError{
-					Header: ret,
-					Error:  err,
-				}
-
-				// notify completion
-				select {
-				case notify <- struct{}{}:
-				default: // nonblocking and ignore duplicate notifications
-				}
-			}(i, chunk)
-		}
-	}()
-
-	// wait sequence of results
-	go func() {
-		defer close(out)
-		sequence := 0
-		for sequence < len(requests) {
-			// receive completion.
-			<-notify
-
-			for sequence < len(requests) {
-
-				//get result for current sequence
-				res := resultBuffer[sequence]
-
-				if res == nil {
-					// not ready for current sequence
-					break
-				}
-
+					buffer[index] = &core.HeaderOrError{
+						Header: ret,
+						Error:  err,
+					}
+				}(i, chunk)
+			}
+			wg.Wait()
+			for _, res := range buffer {
 				out <- res
-
-				// release semaphore after res is delivered
-				<-sem
-
-				// enable to receive next sequence
-				sequence++
 			}
 		}
 	}()
-
 	return out
 }
 

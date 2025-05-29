@@ -16,3 +16,19 @@ func Map[T any, R any](collection []T, iteratee func(item T, index int) R) []R {
 
 	return result
 }
+
+func Group[T any](input []*T, size int) [][]*T {
+	if size <= 0 {
+		return nil
+	}
+
+	var chunks [][]*T
+	for i := 0; i < len(input); i += size {
+		end := i + size
+		if end > len(input) {
+			end = len(input)
+		}
+		chunks = append(chunks, input[i:end])
+	}
+	return chunks
+}

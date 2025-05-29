@@ -19,6 +19,7 @@ import (
 	"github.com/hyperledger-labs/yui-relayer/core"
 	"github.com/hyperledger-labs/yui-relayer/log"
 	"github.com/stretchr/testify/suite"
+	"math/rand"
 	"os"
 	"testing"
 	"time"
@@ -303,7 +304,7 @@ func (ts *ProverTestSuite) setupHeadersForUpdate(latestToTrusted uint64) ([]core
 }
 
 func (ts *ProverTestSuite) TestMakeHeaderChan() {
-	headerChunks := make([]*HeaderChunk, 100)
+	headerChunks := make([]*HeaderChunk, 99)
 	for i := 0; i < len(headerChunks); i++ {
 		headerChunks[i] = &HeaderChunk{
 			ClaimingOutput: &l2.OutputResponse{
@@ -315,7 +316,7 @@ func (ts *ProverTestSuite) TestMakeHeaderChan() {
 	}
 
 	ret := ts.prover.makeHeaderChan(context.Background(), headerChunks, func(ctx context.Context, header *HeaderChunk) (core.Header, error) {
-		time.Sleep(3 * time.Second)
+		time.Sleep(time.Duration(max(1, rand.Int31n(3))) * time.Second)
 		println("run header", header.ClaimingOutput.BlockRef.Number)
 		return &types.Header{
 			Derivation: &types.Derivation{
