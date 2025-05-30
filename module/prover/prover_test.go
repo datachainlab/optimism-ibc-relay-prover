@@ -95,7 +95,7 @@ func (ts *ProverTestSuite) SetupTest() {
 	preimageMakerTimeout := 300 * time.Second
 	l1Client, _ := l1.NewL1Client(context.Background(), l1BeaconEndpoint, l1ExecutionEndpoint)
 	l2Client := l2.NewL2Client(l2Chain, l1ExecutionEndpoint, preimageMakerTimeout, preimageMakerEndpoint, opNodeEndpoint)
-	ts.prover = NewProver(l2Chain, l1Client, l2Client, trustingPeriod, refreshThresholdRate, maxClockDrift, 4, 100)
+	ts.prover = NewProver(l2Chain, l1Client, l2Client, trustingPeriod, refreshThresholdRate, maxClockDrift, 4, 40)
 }
 
 func (ts *ProverTestSuite) TestCreateInitialLightClientState() {
@@ -243,7 +243,6 @@ func (ts *ProverTestSuite) TestCheckRefreshRequired() {
 func (ts *ProverTestSuite) setupHeadersForUpdate(latestToTrusted uint64) ([]core.Header, clienttypes.Height) {
 	latest, err := ts.prover.GetLatestFinalizedHeader(context.Background())
 	ts.Require().NoError(err)
-	h := latest.(*types2.Header)
 
 	// client state
 	trustedHeight := clienttypes.NewHeight(0, latest.GetHeight().GetRevisionHeight()-latestToTrusted)
@@ -274,6 +273,7 @@ func (ts *ProverTestSuite) setupHeadersForUpdate(latestToTrusted uint64) ([]core
 	lastT2D := uint64(0)
 	for i, h := range headers {
 		ih := h.(*types2.Header)
+		ts.Require().True(len(ih.Preimages) > 0)
 		ts.Require().True(len(ih.AccountUpdate.AccountStorageRoot) > 0)
 		ts.Require().True(len(ih.DeterministicToLatest) > 0)
 		ts.Require().Equal(ih.TrustedHeight.RevisionHeight, nextTrusted, i)
@@ -299,7 +299,6 @@ func (ts *ProverTestSuite) setupHeadersForUpdate(latestToTrusted uint64) ([]core
 		}
 	}
 	ts.Require().True(len(headers) > 0)
-	ts.Require().True(len(h.Preimages) > 0)
 	return headers, trustedHeight
 }
 

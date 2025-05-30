@@ -200,14 +200,6 @@ func (pr *Prover) SetupHeadersForUpdate(ctx context.Context, counterparty core.F
 		logger.Info("success preimageRequest", "l2", chunk.ClaimingOutput.BlockRef.Number, "preimageSize", len(preimage))
 		ih.Preimages = preimage
 
-		trustedToDeterministicNums := util.Map(ih.TrustedToDeterministic, func(item *types.L1Header, index int) string {
-			return fmt.Sprintf("%d/%t", item.ConsensusUpdate.FinalizedHeader.Slot, item.TrustedSyncCommittee.IsNext)
-		})
-		deterministicToLatestNums := util.Map(ih.DeterministicToLatest, func(item *types.L1Header, index int) string {
-			return fmt.Sprintf("%d/%t", item.ConsensusUpdate.FinalizedHeader.Slot, item.TrustedSyncCommittee.IsNext)
-		})
-		logger.Info("targetHeader", "l2", ih.Derivation.L2BlockNumber, "trusted_l2", ih.TrustedHeight.GetRevisionHeight(), "l1_t2d", trustedToDeterministicNums, "l1_d2l", deterministicToLatestNums, "preimages", len(ih.Preimages))
-
 		return ih, nil
 	}), nil
 }
@@ -368,7 +360,7 @@ func (pr *Prover) splitHeaders(ctx context.Context, trustedL1BlockNumber uint64,
 	logger := log.GetLogger()
 
 	l2Numbers := make([]uint64, 0)
-	logger.Info("split headers for ", "trustedL2", trustedL2.BlockRef.Number, "latestL2Header", latestHeader.Derivation.L2BlockNumber)
+	logger.Info("split headers", "trustedL2", trustedL2.BlockRef.Number, "latestL2Header", latestHeader.Derivation.L2BlockNumber)
 
 	for start := trustedL2.BlockRef.Number + pr.maxL2NumsForPreimage; start < latestHeader.Derivation.L2BlockNumber; start += pr.maxL2NumsForPreimage {
 		l2Numbers = append(l2Numbers, start)
@@ -406,7 +398,7 @@ func (pr *Prover) splitHeaders(ctx context.Context, trustedL1BlockNumber uint64,
 func (pr *Prover) makeHeaderChan(ctx context.Context, requests []*HeaderChunk, fn func(context.Context, *HeaderChunk) (core.Header, error)) <-chan *core.HeaderOrError {
 	out := make(chan *core.HeaderOrError)
 	sem := make(chan struct{}, pr.maxHeaderConcurrency)
-	done := make(chan struct{}, pr.maxHeaderConcurrency)
+	done := make(chan struct{}, len(requests))
 	buffer := make([]*core.HeaderOrError, len(requests))
 
 	// worker
@@ -415,16 +407,17 @@ func (pr *Prover) makeHeaderChan(ctx context.Context, requests []*HeaderChunk, f
 			// block if the number of concurrent workers reaches maxHeaderConcurrency
 			sem <- struct{}{}
 			go func(index int, chunk *HeaderChunk) {
+				defer func() { done <- struct{}{} }()
 				ret, err := fn(ctx, chunk)
 				buffer[index] = &core.HeaderOrError{
 					Header: ret,
 					Error:  err,
 				}
-				done <- struct{}{}
 			}(i, chunk)
 		}
 	}()
 
+	logger := pr.GetLogger()
 	// sequencer
 	go func() {
 		defer close(out)
@@ -433,7 +426,16 @@ func (pr *Prover) makeHeaderChan(ctx context.Context, requests []*HeaderChunk, f
 			<-done
 			for sequence < len(requests) && buffer[sequence] != nil {
 				result := buffer[sequence]
-				pr.GetLogger().Debug("deliver header", "sequence", sequence, "l2", result.Header.GetHeight())
+
+				// log
+				if result.Header != nil {
+					ih := result.Header.(*types.Header)
+					args := append([]interface{}{"sequence", sequence}, ih.ToLog()...)
+					logger.Info("deliver header success", args...)
+				} else {
+					logger.Debug("deliver header error", "sequence", sequence, "err", result.Error)
+				}
+
 				// Always deliver in order from zero.
 				out <- result
 				// Reset buffer to avoid large memory usage.
