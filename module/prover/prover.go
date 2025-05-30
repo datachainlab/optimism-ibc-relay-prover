@@ -143,11 +143,11 @@ func (pr *Prover) SetupHeadersForUpdate(ctx context.Context, counterparty core.F
 	// No need to update
 	if trustedHeight.GetRevisionHeight() == latest.Derivation.L2BlockNumber {
 		pr.GetLogger().Info("latest is trusted", "l2", latest.Derivation.L2BlockNumber)
-		return nil, nil
+		return core.MakeHeaderStream(), nil
 	}
 	if trustedHeight.GetRevisionHeight() > latest.Derivation.L2BlockNumber {
 		pr.GetLogger().Info("past l2 header", "trustedL2", trustedHeight.GetRevisionHeight(), "targetL2", latest.Derivation.L2BlockNumber)
-		return nil, nil
+		return core.MakeHeaderStream(), nil
 	}
 
 	// Collect L1 headers from trusted to deterministic and deterministic to latest by trusted l2
@@ -409,7 +409,7 @@ func (pr *Prover) makeHeaderChan(ctx context.Context, requests []*HeaderChunk, f
 	done := make(chan struct{}, pr.maxHeaderConcurrency)
 	buffer := make([]*core.HeaderOrError, len(requests))
 
-	// start worker
+	// worker
 	go func() {
 		for i, chunk := range requests {
 			// block if the number of concurrent workers reaches maxHeaderConcurrency
@@ -425,7 +425,7 @@ func (pr *Prover) makeHeaderChan(ctx context.Context, requests []*HeaderChunk, f
 		}
 	}()
 
-	// start deliverer
+	// sequencer
 	go func() {
 		defer close(out)
 		sequence := 0
