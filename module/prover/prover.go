@@ -164,7 +164,15 @@ func (pr *Prover) SetupHeadersForUpdate(ctx context.Context, counterparty core.F
 	logger := pr.GetLogger()
 
 	return pr.makeHeaderChan(ctx, headerChunk, func(ctx context.Context, chunk *HeaderChunk) (core.Header, error) {
-		ih := &types.Header{}
+		trustedL2Height := clienttypes.NewHeight(0, chunk.TrustedOutput.BlockRef.Number)
+		ih := &types.Header{
+			TrustedHeight: &trustedL2Height,
+			Derivation: &types.Derivation{
+				AgreedL2OutputRoot: chunk.TrustedOutput.OutputRoot[:],
+				L2OutputRoot:       chunk.ClaimingOutput.OutputRoot[:],
+				L2BlockNumber:      chunk.ClaimingOutput.BlockRef.Number,
+			},
+		}
 		ih.AccountUpdate, err = pr.l2Client.BuildAccountUpdate(ctx, chunk.ClaimingOutput.BlockRef.Number)
 		if err != nil {
 			return nil, err
@@ -428,6 +436,8 @@ func (pr *Prover) makeHeaderChan(ctx context.Context, requests []*HeaderChunk, f
 				pr.GetLogger().Debug("deliver header", "sequence", sequence, "l2", result.Header.GetHeight())
 				// Always deliver in order from zero.
 				out <- result
+				// Reset buffer to avoid large memory usage.
+				buffer[sequence] = nil
 				sequence++
 				// Allow next worker to start only when the collect sequence is delivered.
 				// If it is released on the worker side, the number of tasks will significantly exceed the number of concurrent executions when lcp-go takes a long time.
