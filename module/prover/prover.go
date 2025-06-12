@@ -314,6 +314,24 @@ func (pr *Prover) CreateInitialLightClientState(ctx context.Context, height expo
 		Frozen:             false,
 		RollupConfigJson:   rollupConfig,
 		L1Config:           l1Config,
+		FaultDisputeGameConfig: &types.FaultDisputeGameConfig{
+			// forge inspect src/dispute/DisputeGameFactory.sol storage-layout
+			// |------------------+--------------------------------------------+------+--------+-------+-------------------------------------------------------|
+			// | _disputeGames    | mapping(Hash => GameId)                    | 103  | 0      | 32    | src/dispute/DisputeGameFactory.sol:DisputeGameFactory |
+			// |------------------+--------------------------------------------+------+--------+-------+-------------------------------------------------------|
+			DisputeGameFactoryTargetStorageSlot: 103,
+			// forge inspect src/dispute/FaultDisputeGame.sol storage-layout
+			//|---------------------------------+------------------------------------------------------------------+------+--------+-------+---------------------------------------------------|
+			//| createdAt                       | Timestamp                                                        | 0    | 0      | 8     | src/dispute/FaultDisputeGame.sol:FaultDisputeGame |
+			//|---------------------------------+------------------------------------------------------------------+------+--------+-------+---------------------------------------------------|
+			//| resolvedAt                      | Timestamp                                                        | 0    | 8      | 8     | src/dispute/FaultDisputeGame.sol:FaultDisputeGame |
+			//|---------------------------------+------------------------------------------------------------------+------+--------+-------+---------------------------------------------------|
+			//| status                          | enum GameStatus                                                  | 0    | 16     | 1     | src/dispute/FaultDisputeGame.sol:FaultDisputeGame |
+			//|---------------------------------+------------------------------------------------------------------+------+--------+-------+-------------------------------------
+			FaultDisputeGameStatusSlot: 0,
+			// status offset index is not 16 but 32 - 8 - 8 - 1 = 15 because items are lined up from behind
+			FaultDisputeGameStatusSlotOffset: 16,
+		},
 	}
 	consensusState := &types.ConsensusState{
 		StorageRoot:            accountUpdate.AccountStorageRoot[:],
