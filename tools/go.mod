@@ -7,6 +7,7 @@ toolchain go1.23.10
 require (
 	github.com/cockroachdb/errors v1.11.3
 	github.com/cosmos/ibc-go/v8 v8.2.1
+	github.com/datachainlab/ethereum-ibc-relay-chain v0.3.17
 	github.com/datachainlab/optimism-ibc-relay-prover v0.0.0-00010101000000-000000000000
 	github.com/ethereum-optimism/optimism v1.13.1
 	github.com/ethereum/go-ethereum v1.15.3
@@ -31,6 +32,8 @@ require (
 	github.com/DataDog/datadog-go v3.2.0+incompatible // indirect
 	github.com/DataDog/zstd v1.5.6-0.20230824185856-869dae002e5e // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
+	github.com/VictoriaMetrics/fastcache v1.12.2 // indirect
+	github.com/avast/retry-go v3.0.0+incompatible // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bgentry/speakeasy v0.1.1-0.20220910012023-760eaf8b6816 // indirect
 	github.com/bits-and-blooms/bitset v1.20.0 // indirect
@@ -108,6 +111,7 @@ require (
 	github.com/hashicorp/yamux v0.1.1 // indirect
 	github.com/hdevalence/ed25519consensus v0.1.0 // indirect
 	github.com/herumi/bls-eth-go-binary v0.0.0-20210917013441-d37c07cfda4e // indirect
+	github.com/holiman/bloomfilter/v2 v2.0.3 // indirect
 	github.com/holiman/uint256 v1.3.2 // indirect
 	github.com/huandu/skiplist v1.2.0 // indirect
 	github.com/iancoleman/strcase v0.3.0 // indirect

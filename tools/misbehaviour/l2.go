@@ -1,20 +1,18 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/cockroachdb/errors"
 	types2 "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
+	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/client"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l1"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/types"
 	bindings2 "github.com/ethereum-optimism/optimism/op-e2e/bindings"
 	"github.com/ethereum-optimism/optimism/op-node/bindings"
-	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum-optimism/optimism/op-service/predeploys"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -106,7 +104,7 @@ func run(ctx context.Context) error {
 	}
 	fmt.Printf("l1 state root=%s\n", common.Bytes2Hex(l1Header.ExecutionUpdate.StateRoot))
 
-	l1InitialState, err := proverL1Client.BuildInitialState(ctx, l1Header.ExecutionUpdate.BlockNumber+10)
+	l1InitialState, err := proverL1Client.BuildInitialState(ctx, l1Header.ExecutionUpdate.BlockNumber)
 	if err != nil {
 		return errors.WithStack(err)
 	}
@@ -114,14 +112,22 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return errors.WithStack(err)
 	}
+	l1Header.TrustedSyncCommittee = &types.TrustedSyncCommittee{
+		IsNext: false,
+		SyncCommittee: &types.SyncCommittee{
+			Pubkeys:         l1InitialState.CurrentSyncCommittee.Pubkeys,
+			AggregatePubkey: l1InitialState.CurrentSyncCommittee.AggregatePubkey,
+		},
+	}
 
 	// Get emulated trusted
-	trustedL2, _, trustedOutputRoot, err := createGameProof(ctx, config, l1Header, results[0])
+	trustedL2, _, trustedOutputRoot, err := createGameProof(ctx, gameType, config, l1Header, results[0])
 	if err != nil {
 		return errors.WithStack(err)
 	}
+
 	// Get resolved (must be older than or equals to trusted)
-	resolvedL2, resolvedFaultDisputeGame, resolvedOutputRoot, err := createGameProof(ctx, config, l1Header, results[1])
+	resolvedL2, resolvedFaultDisputeGame, resolvedOutputRoot, err := createGameProof(ctx, gameType, config, l1Header, results[1])
 	if err != nil {
 		return errors.WithStack(err)
 	}
@@ -131,8 +137,8 @@ func run(ctx context.Context) error {
 		if err != nil {
 			return errors.WithStack(err)
 		}
-		buf := make([]byte, 0)
-		if err = l2.EncodeRLP(bytes.NewBuffer(buf)); err != nil {
+		buf, err := rlp.EncodeToBytes(l2)
+		if err != nil {
 			return errors.WithStack(err)
 		}
 		headerRLPs = append(headerRLPs, buf)
@@ -148,6 +154,10 @@ func run(ctx context.Context) error {
 		ResolvedOutput:               resolvedOutputRoot,
 		TrustedToResolvedL2:          headerRLPs,
 		FaultDisputeGameFactoryProof: resolvedFaultDisputeGame,
+	}
+	clientMessage, err := types2.PackClientMessage(&misbehaviour)
+	if err != nil {
+		return errors.WithStack(err)
 	}
 
 	cs := &types.ClientState{
@@ -168,12 +178,17 @@ func run(ctx context.Context) error {
 		L1Slot:                 l1InitialState.Slot,
 		L1CurrentSyncCommittee: l1InitialState.CurrentSyncCommittee.AggregatePubkey,
 		L1NextSyncCommittee:    l1InitialState.NextSyncCommittee.AggregatePubkey,
+		L1Timestamp:            l1InitialState.Timestamp,
 	}
 
-	misbehaviourBytes, err := misbehaviour.Marshal()
+	misbehaviourBytes, err := clientMessage.Marshal()
 	if err != nil {
 		return errors.WithStack(err)
 	}
+	if err = os.WriteFile("submit_misbehaviour.bin", misbehaviourBytes, 0644); err != nil {
+		return errors.WithStack(err)
+	}
+
 	csBytes, err := cs.Marshal()
 	if err != nil {
 		return errors.WithStack(err)
@@ -184,13 +199,14 @@ func run(ctx context.Context) error {
 	}
 	fmt.Printf("ClientState: %s\n", common.Bytes2Hex(csBytes))
 	fmt.Printf("ConsState: %s\n", common.Bytes2Hex(consStateBytes))
-	fmt.Printf("Misbehaviour: %s\n", common.Bytes2Hex(misbehaviourBytes))
+	fmt.Printf("now: %d\n", time.Now().Unix())
 
 	return nil
 }
 
 func createGameProof(
 	ctx context.Context,
+	targetGameType uint32,
 	config *Config,
 	l1Header *types.L1Header,
 	gameResult bindings.IDisputeGameFactoryGameSearchResult,
@@ -201,43 +217,44 @@ func createGameProof(
 	fmt.Printf("expected gameId=%s blockNum=%d, rootClaim=%s\n", common.Bytes2Hex(gameId[:]), l2BlockNum, common.Bytes2Hex(rootClaim[:]))
 
 	// message passer
-	fmt.Printf("Get message passer proof for L2ToL1MessagePasserAddr=%s at block %d\n", predeploys.L2ToL1MessagePasserAddr.String(), l2BlockNum)
-	mpAccountProof, err := getProof(context.Background(), config.L2Client, predeploys.L2ToL1MessagePasserAddr, []common.Hash{}, fmt.Sprintf("0x%x", l2BlockNum))
+	l2ProofGetter, err := client.NewETHClientWith(config.L2Client)
 	if err != nil {
 		return nil, nil, nil, errors.WithStack(err)
 	}
-	mpAccountProofRLP, err := encodeRLP(mpAccountProof.AccountProof)
+	fmt.Printf("Get message passer proof for L2ToL1MessagePasserAddr=%s at block %d\n", predeploys.L2ToL1MessagePasserAddr.String(), l2BlockNum)
+	mpAccountProof, err := l2ProofGetter.GetProof(ctx, predeploys.L2ToL1MessagePasserAddr, nil, l2BlockNum)
 	if err != nil {
 		return nil, nil, nil, errors.WithStack(err)
 	}
 	resolvedOutputRootWithMessagePasser := &types.OutputRootWithMessagePasser{
 		OutputRoot: rootClaim[:],
 		L2ToL1MessagePasserAccount: &types.AccountUpdate{
-			AccountProof:       mpAccountProofRLP,
+			AccountProof:       mpAccountProof.AccountProofRLP,
 			AccountStorageRoot: mpAccountProof.StorageHash[:],
 		},
 	}
 
 	// Get GameUUID
-	gameUUID, err := config.DisputeGameFactoryCaller.GetGameUUID(nil, 0, rootClaim, l2BlockNum.Bytes())
+	gameUUID, err := config.DisputeGameFactoryCaller.GetGameUUID(nil, targetGameType, rootClaim, common.BytesToHash(l2BlockNum.Bytes()).Bytes())
 	if err != nil {
 		return nil, nil, nil, errors.WithStack(err)
 	}
 	slotForGameId := calculateMappingSlotBytes(gameUUID[:], uint64(103))
 	fmt.Printf("gameUUID=%s, slotForGameId %v\n", common.Bytes2Hex(gameUUID[:]), slotForGameId.String())
 
+	l1ProofGetter, err := client.NewETHClientWith(config.L1Client)
+	if err != nil {
+		return nil, nil, nil, errors.WithStack(err)
+	}
 	// Get Proof of DisputeGameFactoryProxy.sol
-	disputeGameFactoryAccountProof, err := getProof(ctx, config.L1Client, config.DisputeGameFactoryAddress, []common.Hash{
-		slotForGameId,
-	}, fmt.Sprintf("0x%x", l1Header.ExecutionUpdate.BlockNumber))
+	marshallSlotForGameId, err := slotForGameId.MarshalText()
 	if err != nil {
 		return nil, nil, nil, errors.WithStack(err)
 	}
-	accountProofRLP, err := encodeRLP(disputeGameFactoryAccountProof.AccountProof)
-	if err != nil {
-		return nil, nil, nil, errors.WithStack(err)
-	}
-	storageProofRLP, err := encodeRLP(disputeGameFactoryAccountProof.StorageProof[0].Proof)
+	disputeGameFactoryAccountProof, err := l1ProofGetter.GetProof(ctx,
+		config.DisputeGameFactoryAddress,
+		[][]byte{marshallSlotForGameId},
+		big.NewInt(0).SetUint64(l1Header.ExecutionUpdate.BlockNumber))
 	if err != nil {
 		return nil, nil, nil, errors.WithStack(err)
 	}
@@ -254,17 +271,14 @@ func createGameProof(
 	}
 	fmt.Printf("gameType=%d, timestamp=%d, gameAddress=%s, status=%d\n", gameType, timestamp, gameAddress, status)
 	time.Sleep(10 * time.Second)
-	faultDisputeGameProof, err := getProof(context.Background(), config.L1Client, gameAddress, []common.Hash{
-		common.BigToHash(big.NewInt(0)),
-	}, fmt.Sprintf("0x%x", l1Header.ExecutionUpdate.BlockNumber))
+	marshalSlotForStatus, err := common.BigToHash(big.NewInt(0)).MarshalText()
 	if err != nil {
 		return nil, nil, nil, errors.WithStack(err)
 	}
-	faultDisputeGameAccountProofRLP, err := encodeRLP(faultDisputeGameProof.AccountProof)
-	if err != nil {
-		return nil, nil, nil, errors.WithStack(err)
-	}
-	faultDisputeGameStorageRLP, err := encodeRLP(faultDisputeGameProof.StorageProof[0].Proof)
+	faultDisputeGameProof, err := l1ProofGetter.GetProof(ctx, gameAddress,
+		[][]byte{marshalSlotForStatus},
+		big.NewInt(0).SetUint64(l1Header.ExecutionUpdate.BlockNumber),
+	)
 	if err != nil {
 		return nil, nil, nil, errors.WithStack(err)
 	}
@@ -273,15 +287,15 @@ func createGameProof(
 		L1Header:                  l1Header,
 		DisputeGameFactoryAddress: config.DisputeGameFactoryAddress.Bytes(),
 		DisputeGameFactoryAccount: &types.AccountUpdate{
-			AccountProof:       accountProofRLP,
-			AccountStorageRoot: disputeGameFactoryAccountProof.StorageHash.Bytes(),
+			AccountProof:       disputeGameFactoryAccountProof.AccountProofRLP,
+			AccountStorageRoot: disputeGameFactoryAccountProof.StorageHash[:],
 		},
-		DisputeGameFactoryStorageProof: storageProofRLP,
+		DisputeGameFactoryStorageProof: disputeGameFactoryAccountProof.StorageProofRLP[0],
 		FaultDisputeGameAccount: &types.AccountUpdate{
-			AccountProof:       faultDisputeGameAccountProofRLP,
-			AccountStorageRoot: faultDisputeGameProof.StorageHash.Bytes(),
+			AccountProof:       faultDisputeGameProof.AccountProofRLP,
+			AccountStorageRoot: faultDisputeGameProof.StorageHash[:],
 		},
-		FaultDisputeGameStorageProof:   faultDisputeGameStorageRLP,
+		FaultDisputeGameStorageProof:   faultDisputeGameProof.StorageProofRLP[0],
 		FaultDisputeGameSourceGameType: gameType,
 	}
 
@@ -297,34 +311,6 @@ func calculateMappingSlotBytes(keyBytes []byte, mappingSlot uint64) common.Hash 
 	// Calculate the keccak256 hash
 	slotHash := crypto.Keccak256(concatenated)
 	return common.BytesToHash(slotHash[:])
-}
-
-func getProof(ctx context.Context, client *ethclient.Client, address common.Address, storage []common.Hash, blockTag string) (*eth.AccountResult, error) {
-	var getProofResponse *eth.AccountResult
-	err := client.Client().CallContext(ctx, &getProofResponse, "eth_getProof", address, storage, blockTag)
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
-	if getProofResponse == nil {
-		return nil, errors.WithStack(err)
-	}
-	if len(getProofResponse.StorageProof) != len(storage) {
-		return nil, errors.WithStack(fmt.Errorf("missing storage proof data, got %d proof entries but requested %d storage keys", len(getProofResponse.StorageProof), len(storage)))
-	}
-	for i, key := range storage {
-		if key.String() != getProofResponse.StorageProof[i].Key.String() {
-			return nil, errors.WithStack(fmt.Errorf("unexpected storage proof key difference for entry %d: got %s but requested %s", i, getProofResponse.StorageProof[i].Key, key))
-		}
-	}
-	return getProofResponse, nil
-}
-
-func encodeRLP(proof []hexutil.Bytes) ([]byte, error) {
-	target := make([][]byte, len(proof))
-	for i, p := range proof {
-		target[i] = p
-	}
-	return rlp.EncodeToBytes(target)
 }
 
 func unpackGameId(gameId [32]byte) (uint64, uint64, common.Address) {
