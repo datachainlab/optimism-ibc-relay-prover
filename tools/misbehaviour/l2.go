@@ -1,8 +1,9 @@
-package misbehaviour
+package main
 
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/cockroachdb/errors"
 	types2 "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
@@ -12,20 +13,29 @@ import (
 	"github.com/ethereum-optimism/optimism/op-node/bindings"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum-optimism/optimism/op-service/predeploys"
-	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/hyperledger-labs/yui-relayer/log"
 	"math/big"
+	"os"
+	"time"
 )
 
 func main() {
+	_ = log.InitLogger("debug", "text", "stdout")
 	ctx := context.Background()
 	if err := run(ctx); err != nil {
 		fmt.Printf("Error: %v\n", err)
 	}
+}
+
+type HostPort struct {
+	L1BeaconPort int `json:"l1BeaconPort"`
+	L1GethPort   int `json:"l1GethPort"`
+	L2GethPort   int `json:"l2GethPort"`
 }
 
 type Config struct {
@@ -37,19 +47,28 @@ type Config struct {
 }
 
 func run(ctx context.Context) error {
-	// op-sepolia
-	disputeGameFactoryProxyAddr := common.HexToAddress("0x05F9613aDB30026FFd634f38e5C4dFd30a197Fa1")
-	executionNode := "https://ethereum-sepolia-rpc.publicnode.com"
-	beaconNode := "https://ethereum-sepolia-beacon-api.publicnode.com"
+	hostPortJson, err := os.ReadFile("../hostPort.json")
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	var hostPort HostPort
+	if err = json.Unmarshal(hostPortJson, &hostPort); err != nil {
+		return errors.WithStack(err)
+	}
+	disputeGameFactoryProxyAddr := common.HexToAddress("0x41569d8c2612a380c4fdc425845246c41bc4f4ad")
+	executionNode := fmt.Sprintf("http://localhost:%d", hostPort.L1GethPort)
 	l1Client, err := ethclient.Dial(executionNode)
 	if err != nil {
 		return errors.WithStack(err)
 	}
-	l2Client, err := ethclient.Dial("https://sepolia.optimism.io")
+	l2Client, err := ethclient.Dial(fmt.Sprintf("http://localhost:%d", hostPort.L2GethPort))
 	if err != nil {
 		return errors.WithStack(err)
 	}
-	proverL1Client, err := l1.NewL1Client(ctx, beaconNode, executionNode)
+	proverL1Client, err := l1.NewL1Client(ctx,
+		fmt.Sprintf("http://localhost:%d", hostPort.L1BeaconPort),
+		executionNode,
+	)
 	if err != nil {
 		return errors.WithStack(err)
 	}
@@ -70,9 +89,9 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return errors.WithStack(err)
 	}
-
-	targetGame := big.NewInt(gameCount.Int64() - 1000)
-	results, err := disputeGameFactoryCaller.FindLatestGames(nil, 0, targetGame, big.NewInt(2))
+	start := gameCount.Int64() - 5
+	gameType := uint32(1) // Permission Cannon in local net
+	results, err := disputeGameFactoryCaller.FindLatestGames(nil, gameType, big.NewInt(start), big.NewInt(2))
 	if err != nil {
 		return errors.WithStack(err)
 	}
@@ -87,8 +106,17 @@ func run(ctx context.Context) error {
 	}
 	fmt.Printf("l1 state root=%s\n", common.Bytes2Hex(l1Header.ExecutionUpdate.StateRoot))
 
+	l1InitialState, err := proverL1Client.BuildInitialState(ctx, l1Header.ExecutionUpdate.BlockNumber+10)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	l1Config, err := proverL1Client.BuildL1Config(l1InitialState, 0, 86400*time.Second)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+
 	// Get emulated trusted
-	trustedL2, trustedFaultDisputeGame, trustedOutputRoot, err := createGameProof(ctx, config, l1Header, results[0])
+	trustedL2, _, trustedOutputRoot, err := createGameProof(ctx, config, l1Header, results[0])
 	if err != nil {
 		return errors.WithStack(err)
 	}
@@ -110,7 +138,6 @@ func run(ctx context.Context) error {
 		headerRLPs = append(headerRLPs, buf)
 	}
 
-	//TODO make misbehaviour
 	misbehaviour := types.Misbehaviour{
 		ClientId: "optimism-01",
 		TrustedHeight: &types2.Height{
@@ -122,6 +149,43 @@ func run(ctx context.Context) error {
 		TrustedToResolvedL2:          headerRLPs,
 		FaultDisputeGameFactoryProof: resolvedFaultDisputeGame,
 	}
+
+	cs := &types.ClientState{
+		LatestHeight: &types2.Height{
+			RevisionNumber: 0,
+			RevisionHeight: trustedL2.Uint64(),
+		},
+		L1Config: l1Config,
+		FaultDisputeGameConfig: &types.FaultDisputeGameConfig{
+			DisputeGameFactoryTargetStorageSlot: 103,
+			FaultDisputeGameStatusSlot:          0,
+			FaultDisputeGameStatusSlotOffset:    15,
+		},
+	}
+
+	consState := types.ConsensusState{
+		OutputRoot:             trustedOutputRoot.OutputRoot,
+		L1Slot:                 l1InitialState.Slot,
+		L1CurrentSyncCommittee: l1InitialState.CurrentSyncCommittee.AggregatePubkey,
+		L1NextSyncCommittee:    l1InitialState.NextSyncCommittee.AggregatePubkey,
+	}
+
+	misbehaviourBytes, err := misbehaviour.Marshal()
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	csBytes, err := cs.Marshal()
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	consStateBytes, err := consState.Marshal()
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	fmt.Printf("ClientState: %s\n", common.Bytes2Hex(csBytes))
+	fmt.Printf("ConsState: %s\n", common.Bytes2Hex(consStateBytes))
+	fmt.Printf("Misbehaviour: %s\n", common.Bytes2Hex(misbehaviourBytes))
+
 	return nil
 }
 
@@ -136,16 +200,34 @@ func createGameProof(
 	rootClaim := gameResult.RootClaim
 	fmt.Printf("expected gameId=%s blockNum=%d, rootClaim=%s\n", common.Bytes2Hex(gameId[:]), l2BlockNum, common.Bytes2Hex(rootClaim[:]))
 
+	// message passer
+	fmt.Printf("Get message passer proof for L2ToL1MessagePasserAddr=%s at block %d\n", predeploys.L2ToL1MessagePasserAddr.String(), l2BlockNum)
+	mpAccountProof, err := getProof(context.Background(), config.L2Client, predeploys.L2ToL1MessagePasserAddr, []common.Hash{}, fmt.Sprintf("0x%x", l2BlockNum))
+	if err != nil {
+		return nil, nil, nil, errors.WithStack(err)
+	}
+	mpAccountProofRLP, err := encodeRLP(mpAccountProof.AccountProof)
+	if err != nil {
+		return nil, nil, nil, errors.WithStack(err)
+	}
+	resolvedOutputRootWithMessagePasser := &types.OutputRootWithMessagePasser{
+		OutputRoot: rootClaim[:],
+		L2ToL1MessagePasserAccount: &types.AccountUpdate{
+			AccountProof:       mpAccountProofRLP,
+			AccountStorageRoot: mpAccountProof.StorageHash[:],
+		},
+	}
+
 	// Get GameUUID
 	gameUUID, err := config.DisputeGameFactoryCaller.GetGameUUID(nil, 0, rootClaim, l2BlockNum.Bytes())
 	if err != nil {
 		return nil, nil, nil, errors.WithStack(err)
 	}
 	slotForGameId := calculateMappingSlotBytes(gameUUID[:], uint64(103))
-	fmt.Printf("gameUUID=%s, slotForGameId %v\n", common.Bytes2Hex(gameUUID[:]), slotForGameId.Bytes())
+	fmt.Printf("gameUUID=%s, slotForGameId %v\n", common.Bytes2Hex(gameUUID[:]), slotForGameId.String())
 
 	// Get Proof of DisputeGameFactoryProxy.sol
-	disputeGameFactoryAccountProof, err := getProof(context.Background(), config.L1Client, config.DisputeGameFactoryAddress, []common.Hash{
+	disputeGameFactoryAccountProof, err := getProof(ctx, config.L1Client, config.DisputeGameFactoryAddress, []common.Hash{
 		slotForGameId,
 	}, fmt.Sprintf("0x%x", l1Header.ExecutionUpdate.BlockNumber))
 	if err != nil {
@@ -171,6 +253,7 @@ func createGameProof(
 		return nil, nil, nil, errors.WithStack(err)
 	}
 	fmt.Printf("gameType=%d, timestamp=%d, gameAddress=%s, status=%d\n", gameType, timestamp, gameAddress, status)
+	time.Sleep(10 * time.Second)
 	faultDisputeGameProof, err := getProof(context.Background(), config.L1Client, gameAddress, []common.Hash{
 		common.BigToHash(big.NewInt(0)),
 	}, fmt.Sprintf("0x%x", l1Header.ExecutionUpdate.BlockNumber))
@@ -202,22 +285,6 @@ func createGameProof(
 		FaultDisputeGameSourceGameType: gameType,
 	}
 
-	// message passer
-	mpAccountProof, err := getProof(context.Background(), config.L2Client, predeploys.L2ToL1MessagePasserAddr, []common.Hash{}, fmt.Sprintf("0x%x", l2BlockNum))
-	if err != nil {
-		return nil, nil, nil, errors.WithStack(err)
-	}
-	mpAccountProofRLP, err := encodeRLP(mpAccountProof.AccountProof)
-	if err != nil {
-		return nil, nil, nil, errors.WithStack(err)
-	}
-	resolvedOutputRootWithMessagePasser := &types.OutputRootWithMessagePasser{
-		OutputRoot: rootClaim[:],
-		L2ToL1MessagePasserAccount: &types.AccountUpdate{
-			AccountProof:       mpAccountProofRLP,
-			AccountStorageRoot: mpAccountProof.StorageHash[:],
-		},
-	}
 	return l2BlockNum, &disputeGameFactoryProof, resolvedOutputRootWithMessagePasser, nil
 }
 
@@ -236,24 +303,24 @@ func getProof(ctx context.Context, client *ethclient.Client, address common.Addr
 	var getProofResponse *eth.AccountResult
 	err := client.Client().CallContext(ctx, &getProofResponse, "eth_getProof", address, storage, blockTag)
 	if err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 	if getProofResponse == nil {
-		return nil, ethereum.NotFound
+		return nil, errors.WithStack(err)
 	}
 	if len(getProofResponse.StorageProof) != len(storage) {
-		return nil, fmt.Errorf("missing storage proof data, got %d proof entries but requested %d storage keys", len(getProofResponse.StorageProof), len(storage))
+		return nil, errors.WithStack(fmt.Errorf("missing storage proof data, got %d proof entries but requested %d storage keys", len(getProofResponse.StorageProof), len(storage)))
 	}
 	for i, key := range storage {
 		if key.String() != getProofResponse.StorageProof[i].Key.String() {
-			return nil, fmt.Errorf("unexpected storage proof key difference for entry %d: got %s but requested %s", i, getProofResponse.StorageProof[i].Key, key)
+			return nil, errors.WithStack(fmt.Errorf("unexpected storage proof key difference for entry %d: got %s but requested %s", i, getProofResponse.StorageProof[i].Key, key))
 		}
 	}
 	return getProofResponse, nil
 }
 
 func encodeRLP(proof []hexutil.Bytes) ([]byte, error) {
-	target := make([][]byte, 0, len(proof))
+	target := make([][]byte, len(proof))
 	for i, p := range proof {
 		target[i] = p
 	}
