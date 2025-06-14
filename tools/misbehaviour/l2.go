@@ -11,6 +11,7 @@ import (
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/types"
 	bindings2 "github.com/ethereum-optimism/optimism/op-e2e/bindings"
 	"github.com/ethereum-optimism/optimism/op-node/bindings"
+	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum-optimism/optimism/op-service/predeploys"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -89,7 +90,7 @@ func run(ctx context.Context) error {
 	}
 	start := gameCount.Int64() - 5
 	gameType := uint32(1) // Permission Cannon in local net
-	results, err := disputeGameFactoryCaller.FindLatestGames(nil, gameType, big.NewInt(start), big.NewInt(2))
+	results, err := disputeGameFactoryCaller.FindLatestGames(nil, gameType, big.NewInt(start), big.NewInt(1))
 	if err != nil {
 		return errors.WithStack(err)
 	}
@@ -120,40 +121,38 @@ func run(ctx context.Context) error {
 		},
 	}
 
-	// Get emulated trusted
-	trustedL2, _, trustedOutputRoot, err := createGameProof(ctx, gameType, config, l1Header, results[0])
+	// Get resolved
+	resolvedL2, resolvedFaultDisputeGame, resolvedOutputRoot, err := createGameProof(ctx, gameType, config, l1Header, results[0])
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	trustedL2Num := big.NewInt(resolvedL2.Int64() + 1)
+
+	consStateMPProof, err := createMessagePasserAccountProof(ctx, config, trustedL2Num)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	resolvedMPProof, err := createMessagePasserAccountProof(ctx, config, resolvedL2)
 	if err != nil {
 		return errors.WithStack(err)
 	}
 
-	// Get resolved (must be older than or equals to trusted)
-	resolvedL2, resolvedFaultDisputeGame, resolvedOutputRoot, err := createGameProof(ctx, gameType, config, l1Header, results[1])
+	faultyL2History, faultyOutput, err := createFaultyL2History(ctx, config, resolvedL2, trustedL2Num, consStateMPProof)
 	if err != nil {
 		return errors.WithStack(err)
-	}
-	headerRLPs := make([][]byte, 0)
-	for i := trustedL2.Int64(); i >= resolvedL2.Int64(); i-- {
-		l2, err := l2Client.HeaderByNumber(ctx, big.NewInt(i))
-		if err != nil {
-			return errors.WithStack(err)
-		}
-		buf, err := rlp.EncodeToBytes(l2)
-		if err != nil {
-			return errors.WithStack(err)
-		}
-		headerRLPs = append(headerRLPs, buf)
 	}
 
 	misbehaviour := types.Misbehaviour{
 		ClientId: "optimism-01",
 		TrustedHeight: &types2.Height{
 			RevisionNumber: 0,
-			RevisionHeight: trustedL2.Uint64(),
+			RevisionHeight: trustedL2Num.Uint64(),
 		},
-		TrustedOutput:                trustedOutputRoot,
-		ResolvedOutput:               resolvedOutputRoot,
-		TrustedToResolvedL2:          headerRLPs,
-		FaultDisputeGameFactoryProof: resolvedFaultDisputeGame,
+		FirstL2ToL1MessagePasserAccount: consStateMPProof,
+		LastL2ToL1MessagePasserAccount:  resolvedMPProof,
+		ResolvedOutputRoot:              resolvedOutputRoot[:],
+		L2HeaderHistory:                 faultyL2History,
+		FaultDisputeGameFactoryProof:    resolvedFaultDisputeGame,
 	}
 	clientMessage, err := types2.PackClientMessage(&misbehaviour)
 	if err != nil {
@@ -161,24 +160,23 @@ func run(ctx context.Context) error {
 	}
 
 	cs := &types.ClientState{
-		LatestHeight: &types2.Height{
-			RevisionNumber: 0,
-			RevisionHeight: trustedL2.Uint64(),
-		},
-		L1Config: l1Config,
+		LatestHeight: misbehaviour.TrustedHeight,
+		L1Config:     l1Config,
 		FaultDisputeGameConfig: &types.FaultDisputeGameConfig{
 			DisputeGameFactoryTargetStorageSlot: 103,
 			FaultDisputeGameStatusSlot:          0,
 			FaultDisputeGameStatusSlotOffset:    15,
+			StatusDefenderWin:                   2,
 		},
 	}
 
 	consState := types.ConsensusState{
-		OutputRoot:             trustedOutputRoot.OutputRoot,
+		OutputRoot:             faultyOutput,
 		L1Slot:                 l1InitialState.Slot,
 		L1CurrentSyncCommittee: l1InitialState.CurrentSyncCommittee.AggregatePubkey,
 		L1NextSyncCommittee:    l1InitialState.NextSyncCommittee.AggregatePubkey,
 		L1Timestamp:            l1InitialState.Timestamp,
+		StorageRoot:            make([]byte, 32), // unused
 	}
 
 	misbehaviourBytes, err := clientMessage.Marshal()
@@ -204,83 +202,112 @@ func run(ctx context.Context) error {
 	return nil
 }
 
+func createFaultyL2History(ctx context.Context, config *Config, resolvedNum *big.Int, trustedNum *big.Int, consStateMPProof *types.AccountUpdate) ([][]byte, []byte, error) {
+
+	// Construct Faulty L2 History
+	faultyL2HistoryRLPs := make([][]byte, 2)
+	faultResolvedHeader, err := config.L2Client.HeaderByNumber(ctx, resolvedNum)
+	if err != nil {
+		return nil, nil, errors.WithStack(err)
+	}
+	faultResolvedHeader.Coinbase = common.Address{}
+	faultyL2HistoryRLPs[1], err = rlp.EncodeToBytes(faultResolvedHeader)
+	if err != nil {
+		return nil, nil, errors.WithStack(err)
+	}
+	faultyTrustedHeader, err := config.L2Client.HeaderByNumber(ctx, trustedNum)
+	if err != nil {
+		return nil, nil, errors.WithStack(err)
+	}
+	faultyTrustedHeader.ParentHash = faultResolvedHeader.Hash()
+	faultyL2HistoryRLPs[0], err = rlp.EncodeToBytes(faultyTrustedHeader)
+	if err != nil {
+		return nil, nil, errors.WithStack(err)
+	}
+	output := eth.OutputRoot(&eth.OutputV0{
+		StateRoot:                eth.Bytes32(faultyTrustedHeader.Root),
+		MessagePasserStorageRoot: eth.Bytes32(consStateMPProof.AccountStorageRoot),
+		BlockHash:                faultyTrustedHeader.Hash(),
+	})
+	return faultyL2HistoryRLPs, output[:], nil
+}
+
+func createMessagePasserAccountProof(ctx context.Context, config *Config, l2BlockNum *big.Int) (*types.AccountUpdate, error) {
+	l2ProofGetter, err := client.NewETHClientWith(config.L2Client)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	address := predeploys.L2ToL1MessagePasserAddr
+	fmt.Printf("Get message passer proof for address=%s at block %d\n", address.String(), l2BlockNum)
+	mpAccountProof, err := l2ProofGetter.GetProof(ctx, address, nil, l2BlockNum)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	return &types.AccountUpdate{
+		AccountProof:       mpAccountProof.AccountProofRLP,
+		AccountStorageRoot: mpAccountProof.StorageHash[:],
+	}, nil
+}
+
 func createGameProof(
 	ctx context.Context,
 	targetGameType uint32,
 	config *Config,
 	l1Header *types.L1Header,
 	gameResult bindings.IDisputeGameFactoryGameSearchResult,
-) (*big.Int, *types.FaultDisputeGameFactoryProof, *types.OutputRootWithMessagePasser, error) {
+) (*big.Int, *types.FaultDisputeGameFactoryProof, [32]byte, error) {
 	gameId := gameResult.Metadata
 	l2BlockNum := big.NewInt(0).SetBytes(gameResult.ExtraData)
 	rootClaim := gameResult.RootClaim
 	fmt.Printf("expected gameId=%s blockNum=%d, rootClaim=%s\n", common.Bytes2Hex(gameId[:]), l2BlockNum, common.Bytes2Hex(rootClaim[:]))
 
-	// message passer
-	l2ProofGetter, err := client.NewETHClientWith(config.L2Client)
-	if err != nil {
-		return nil, nil, nil, errors.WithStack(err)
-	}
-	fmt.Printf("Get message passer proof for L2ToL1MessagePasserAddr=%s at block %d\n", predeploys.L2ToL1MessagePasserAddr.String(), l2BlockNum)
-	mpAccountProof, err := l2ProofGetter.GetProof(ctx, predeploys.L2ToL1MessagePasserAddr, nil, l2BlockNum)
-	if err != nil {
-		return nil, nil, nil, errors.WithStack(err)
-	}
-	resolvedOutputRootWithMessagePasser := &types.OutputRootWithMessagePasser{
-		OutputRoot: rootClaim[:],
-		L2ToL1MessagePasserAccount: &types.AccountUpdate{
-			AccountProof:       mpAccountProof.AccountProofRLP,
-			AccountStorageRoot: mpAccountProof.StorageHash[:],
-		},
-	}
-
 	// Get GameUUID
 	gameUUID, err := config.DisputeGameFactoryCaller.GetGameUUID(nil, targetGameType, rootClaim, common.BytesToHash(l2BlockNum.Bytes()).Bytes())
 	if err != nil {
-		return nil, nil, nil, errors.WithStack(err)
+		return nil, nil, rootClaim, errors.WithStack(err)
 	}
 	slotForGameId := calculateMappingSlotBytes(gameUUID[:], uint64(103))
 	fmt.Printf("gameUUID=%s, slotForGameId %v\n", common.Bytes2Hex(gameUUID[:]), slotForGameId.String())
 
 	l1ProofGetter, err := client.NewETHClientWith(config.L1Client)
 	if err != nil {
-		return nil, nil, nil, errors.WithStack(err)
+		return nil, nil, rootClaim, errors.WithStack(err)
 	}
 	// Get Proof of DisputeGameFactoryProxy.sol
 	marshallSlotForGameId, err := slotForGameId.MarshalText()
 	if err != nil {
-		return nil, nil, nil, errors.WithStack(err)
+		return nil, nil, rootClaim, errors.WithStack(err)
 	}
 	disputeGameFactoryAccountProof, err := l1ProofGetter.GetProof(ctx,
 		config.DisputeGameFactoryAddress,
 		[][]byte{marshallSlotForGameId},
 		big.NewInt(0).SetUint64(l1Header.ExecutionUpdate.BlockNumber))
 	if err != nil {
-		return nil, nil, nil, errors.WithStack(err)
+		return nil, nil, rootClaim, errors.WithStack(err)
 	}
 
 	// Get Proof of FaultDisputeGame.sol
 	gameType, timestamp, gameAddress := unpackGameId(gameId)
 	faultDisputeGameCaller, err := bindings2.NewFaultDisputeGameCaller(gameAddress, config.L1Client)
 	if err != nil {
-		return nil, nil, nil, errors.WithStack(err)
+		return nil, nil, rootClaim, errors.WithStack(err)
 	}
 	status, err := faultDisputeGameCaller.Status(nil)
 	if err != nil {
-		return nil, nil, nil, errors.WithStack(err)
+		return nil, nil, rootClaim, errors.WithStack(err)
 	}
 	fmt.Printf("gameType=%d, timestamp=%d, gameAddress=%s, status=%d\n", gameType, timestamp, gameAddress, status)
 	time.Sleep(10 * time.Second)
 	marshalSlotForStatus, err := common.BigToHash(big.NewInt(0)).MarshalText()
 	if err != nil {
-		return nil, nil, nil, errors.WithStack(err)
+		return nil, nil, rootClaim, errors.WithStack(err)
 	}
 	faultDisputeGameProof, err := l1ProofGetter.GetProof(ctx, gameAddress,
 		[][]byte{marshalSlotForStatus},
 		big.NewInt(0).SetUint64(l1Header.ExecutionUpdate.BlockNumber),
 	)
 	if err != nil {
-		return nil, nil, nil, errors.WithStack(err)
+		return nil, nil, rootClaim, errors.WithStack(err)
 	}
 
 	disputeGameFactoryProof := types.FaultDisputeGameFactoryProof{
@@ -299,7 +326,7 @@ func createGameProof(
 		FaultDisputeGameSourceGameType: gameType,
 	}
 
-	return l2BlockNum, &disputeGameFactoryProof, resolvedOutputRootWithMessagePasser, nil
+	return l2BlockNum, &disputeGameFactoryProof, rootClaim, nil
 }
 
 func calculateMappingSlotBytes(keyBytes []byte, mappingSlot uint64) common.Hash {
