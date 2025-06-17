@@ -106,12 +106,7 @@ func (pr *Prover) GetLatestFinalizedHeader(ctx context.Context) (latestFinalized
 		"finalized-slot", finalizedL1Header.ConsensusUpdate.FinalizedHeader.Slot,
 		"signature-slot", finalizedL1Header.ConsensusUpdate.SignatureSlot)
 
-	accountUpdate, err := pr.l2Client.BuildAccountUpdate(ctx, l2Output.BlockRef.Number)
-	if err != nil {
-		return nil, err
-	}
 	header := &types.Header{
-		AccountUpdate:         accountUpdate,
 		DeterministicToLatest: []*types.L1Header{deterministicL1Header, finalizedL1Header},
 		Derivation: &types.Derivation{
 			L2OutputRoot:  l2Output.OutputRoot[:],
@@ -329,7 +324,7 @@ func (pr *Prover) CreateInitialLightClientState(ctx context.Context, height expo
 			//|---------------------------------+------------------------------------------------------------------+------+--------+-------+-------------------------------------
 			FaultDisputeGameStatusSlot: 0,
 			// status offset index is not 16 but 32 - 8 - 8 - 1 = 15 because items are lined up from behind
-			FaultDisputeGameStatusSlotOffset: 16,
+			FaultDisputeGameStatusSlotOffset: 15,
 		},
 	}
 	consensusState := &types.ConsensusState{
