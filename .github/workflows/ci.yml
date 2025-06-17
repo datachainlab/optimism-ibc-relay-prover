@@ -48,7 +48,7 @@ jobs:
       - name: Prepare contract
         run: |
           make set-port
-          make contract
+          make contracts
         env:
           PREIMAGE_MAKER: ./
       - name: Test
