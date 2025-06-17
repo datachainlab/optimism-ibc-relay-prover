@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"github.com/cockroachdb/errors"
-	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l1/beacon"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/types"
 	lctypes "github.com/datachainlab/optimism-ibc-relay-prover/module/types"
@@ -244,10 +243,6 @@ func (pr *L1Client) BuildNextSyncCommitteeUpdate(ctx context.Context, period uin
 		ExecutionUpdate: executionUpdate,
 		Timestamp:       executionHeader.Timestamp,
 	}, nil
-}
-
-func (pr *L1Client) newHeight(blockNumber uint64) clienttypes.Height {
-	return clienttypes.NewHeight(0, blockNumber)
 }
 
 func NewL1Client(ctx context.Context, l1BeaconEndpoint, l1ExecutionEndpoint string) (*L1Client, error) {

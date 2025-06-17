@@ -164,9 +164,8 @@ func (pr *Prover) SetupHeadersForUpdate(ctx context.Context, counterparty core.F
 	logger := pr.GetLogger()
 
 	return pr.makeHeaderChan(ctx, headerChunk, func(ctx context.Context, chunk *HeaderChunk) (core.Header, error) {
-		trustedL2Height := clienttypes.NewHeight(0, chunk.TrustedOutput.BlockRef.Number)
 		ih := &types.Header{
-			TrustedHeight: &trustedL2Height,
+			TrustedHeight: util.NewHeight(chunk.TrustedOutput.BlockRef.Number),
 			Derivation: &types.Derivation{
 				AgreedL2OutputRoot: chunk.TrustedOutput.OutputRoot[:],
 				L2OutputRoot:       chunk.ClaimingOutput.OutputRoot[:],

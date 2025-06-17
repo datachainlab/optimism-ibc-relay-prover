@@ -14,6 +14,7 @@ import (
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l2"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/types"
 	types2 "github.com/datachainlab/optimism-ibc-relay-prover/module/types"
+	"github.com/datachainlab/optimism-ibc-relay-prover/module/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/hyperledger-labs/yui-relayer/config"
 	"github.com/hyperledger-labs/yui-relayer/core"
@@ -215,9 +216,8 @@ func (ts *ProverTestSuite) TestCheckRefreshRequired() {
 	// Not refresh because of trusted l1 = latest l1
 	latest, err := ts.prover.l2Client.SyncStatus(ctx)
 	ts.Require().NoError(err)
-	trustedHeight := clienttypes.NewHeight(0, latest.FinalizedL2.Number)
 	protoClientState, err := codectypes.NewAnyWithValue(exported.ClientState(&types2.ClientState{
-		LatestHeight: &trustedHeight,
+		LatestHeight: util.NewHeight(latest.FinalizedL2.Number),
 	}).(proto.Message))
 	ts.Require().NoError(err)
 	chain.mockClientState.ClientState = protoClientState
@@ -227,9 +227,8 @@ func (ts *ProverTestSuite) TestCheckRefreshRequired() {
 	ts.Require().False(required)
 
 	// should refresh by block difference
-	trustedHeight = clienttypes.NewHeight(0, latest.FinalizedL2.Number-200)
 	protoClientState, err = codectypes.NewAnyWithValue(exported.ClientState(&types2.ClientState{
-		LatestHeight: &trustedHeight,
+		LatestHeight: util.NewHeight(latest.FinalizedL2.Number - 200),
 	}).(proto.Message))
 	ts.Require().NoError(err)
 	chain.mockClientState.ClientState = protoClientState
