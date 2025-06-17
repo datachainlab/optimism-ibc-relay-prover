@@ -75,19 +75,19 @@ func (c *L2Client) CreatePreimages(ctx context.Context, request *PreimageRequest
 	}
 	body, err := json.Marshal(request)
 	if err != nil {
-		return nil, errors.WithStack(err)
+		return nil, errors.Wrap(err, "failed to marshal preimage request")
 	}
 	buffer := bytes.NewBuffer(body)
 	response, err := httpClient.Post(fmt.Sprintf("%s/derivation", c.preimageMakerEndpoint), "application/json", buffer)
 	if err != nil {
-		return nil, errors.WithStack(err)
+		return nil, errors.Wrap(err, "failed to call preimage request")
 	}
 	if response.StatusCode != http.StatusOK {
 		return nil, errors.Errorf("failed to create preimages: status=%d", response.StatusCode)
 	}
 	preimageData, err := io.ReadAll(response.Body)
 	if err != nil {
-		return nil, errors.WithStack(err)
+		return nil, errors.Wrap(err, "failed to read preimage data")
 	}
 	return preimageData, nil
 }
@@ -95,7 +95,7 @@ func (c *L2Client) CreatePreimages(ctx context.Context, request *PreimageRequest
 func (c *L2Client) TimestampAt(ctx context.Context, number uint64) (uint64, error) {
 	header, err := c.Chain.Client().HeaderByNumber(ctx, big.NewInt(0).SetUint64(number))
 	if err != nil {
-		return 0, errors.WithStack(err)
+		return 0, errors.Wrapf(err, "failed to get block from number: number=%d", number)
 	}
 	return header.Time, nil
 }
@@ -108,7 +108,7 @@ func (c *L2Client) BuildAccountUpdate(ctx context.Context, blockNumber uint64) (
 		big.NewInt(int64(blockNumber)),
 	)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "failed to get account proof: number=%d", blockNumber)
 	}
 	log.GetLogger().Info("buildAccountUpdate: get proof", "block_number", blockNumber, "ibc_address", c.Chain.Config().IBCAddress().String(), "account_proof", hex.EncodeToString(proof.AccountProofRLP), "storage_hash", hex.EncodeToString(proof.StorageHash[:]))
 	return &lctypes.AccountUpdate{
@@ -125,7 +125,7 @@ func (c *L2Client) BuildStateProof(ctx context.Context, path []byte, height int6
 	))
 	storageKeyHex, err := storageKey.MarshalText()
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "failed to marshal storage key: key=%s, proof=%d", storageKey.Hex(), height)
 	}
 
 	// call eth_getProof
@@ -136,7 +136,7 @@ func (c *L2Client) BuildStateProof(ctx context.Context, path []byte, height int6
 		big.NewInt(height),
 	)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "failed to get storage proof : key=%s, proof=%d", storageKey.Hex(), height)
 	}
 	return stateProof.StorageProofRLP[0], nil
 }

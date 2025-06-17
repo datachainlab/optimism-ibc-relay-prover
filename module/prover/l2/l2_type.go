@@ -6,6 +6,7 @@ import (
 	"reflect"
 )
 
+// https://github.com/ethereum-optimism/optimism/blob/v1.13.1/op-service/eth/sync_status.go
 type SyncStatus struct {
 	// CurrentL1 is the L1 block that the derivation process is last idled at.
 	// This may not be fully derived into L2 data yet.

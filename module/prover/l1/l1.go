@@ -249,11 +249,11 @@ func NewL1Client(ctx context.Context, l1BeaconEndpoint, l1ExecutionEndpoint stri
 	beaconClient := beacon.NewClient(l1BeaconEndpoint)
 	executionClient, err := ethclient.DialContext(ctx, l1ExecutionEndpoint)
 	if err != nil {
-		return nil, errors.WithStack(err)
+		return nil, errors.Wrap(err, "failed to create L1Client")
 	}
 	chainID, err := executionClient.ChainID(ctx)
 	if err != nil {
-		return nil, errors.WithStack(err)
+		return nil, errors.Wrap(err, "failed to get chainId on L1Client")
 	}
 
 	network := Minimal
