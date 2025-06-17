@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  lint:
+    name: lint
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - name: lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.58
+          # still using the deprecated types in ibc-go v8
+          args: --timeout=5m0s --disable staticcheck
+  test:
+    name: test
+    timeout-minutes: 120
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - uses: extractions/setup-just@v2
+        with:
+          just-version: 1.40.0
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+      - name: Install kurtosis
+        run: |
+          sudo apt-get install jq
+          echo "deb [trusted=yes] https://apt.fury.io/kurtosis-tech/ /" | sudo tee /etc/apt/sources.list.d/kurtosis.list
+          sudo apt update
+          sudo apt remove kurtosis-cli
+          sudo apt install kurtosis-cli=1.6.0 -V
+      - name: Download optimism-preimage-maker
+        run: |
+          git clone https://github.com/datachainlab/optimism-preimage-maker
+      - name: Start optimism dev net
+        run: |
+          cd optimism-preimage-maker
+          make chain
+          make devnet-up
+          make set-port
+      - name: Start preimage server
+        run: |
+          cd optimism-preimage-maker
+          make server-up &
+          make wait
+      - name: Prepare contract
+        run:
+          make set-port
+          make contract
+      - name: Test
+        run: go test ./...
