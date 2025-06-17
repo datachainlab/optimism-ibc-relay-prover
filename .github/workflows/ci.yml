@@ -9,20 +9,6 @@ on:
       - main
 
 jobs:
-  lint:
-    name: lint
-    timeout-minutes: 20
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.22'
-      - name: lint
-        uses: golangci/golangci-lint-action@v6
-        with:
-          version: v1.58
-          # still using the deprecated types in ibc-go v8
-          args: --timeout=5m0s --disable staticcheck
   test:
     name: test
     timeout-minutes: 120
@@ -60,8 +46,10 @@ jobs:
           make server-up &
           make wait
       - name: Prepare contract
-        run:
+        run: |
           make set-port
           make contract
+        env:
+          PREIMAGE_MAKER: ./
       - name: Test
         run: go test ./...

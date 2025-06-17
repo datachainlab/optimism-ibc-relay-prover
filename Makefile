@@ -23,9 +23,10 @@ proto-update-deps:
 	@echo "Updating Protobuf dependencies"
 	$(DOCKER) run --user 0 --rm -v $(CURDIR)/proto:/workspace --workdir /workspace $(protoImageName) buf mod update
 
+PREIMAGE_MAKER ?= ../
 .PHONY: set-port
 set-port:
-	../optimism-preimage-maker/scripts/port.sh
+	$(PREIMAGE_MAKER)/optimism-preimage-maker/scripts/port.sh
 	@L2_ROLLUP_PORT=$$(jq -r '.l2RollupPort' hostPort.json);\
     L2_GETH_PORT=$$(jq -r '.l2GethPort' hostPort.json);\
     L1_GETH_PORT=$$(jq -r '.l1GethPort' hostPort.json);\
