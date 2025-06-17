@@ -3,6 +3,7 @@ package prover
 import (
 	"context"
 	"fmt"
+	"github.com/cockroachdb/errors"
 	"github.com/cosmos/cosmos-sdk/codec"
 	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
 	"github.com/cosmos/ibc-go/v8/modules/core/exported"
@@ -64,14 +65,14 @@ func (pr *Prover) Init(homePath string, timeout time.Duration, codec codec.Proto
 func (pr *Prover) GetLatestFinalizedHeader(ctx context.Context) (latestFinalizedHeader core.Header, err error) {
 	syncStatus, err := pr.l2Client.SyncStatus(ctx)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "failed to call syncStatus")
 	}
 	// Wait for finalizedL1 to exceed syncStatus
 	var finalizedL1Header *types.L1Header
 	for {
 		finalizedL1Header, err = pr.l1Client.GetLatestFinalizedL1Header(ctx)
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrap(err, "failed to get latest L1 finalized header")
 		}
 		if finalizedL1Header.ExecutionUpdate.BlockNumber >= syncStatus.FinalizedL1.Number {
 			break
@@ -87,7 +88,7 @@ func (pr *Prover) GetLatestFinalizedHeader(ctx context.Context) (latestFinalized
 	for {
 		deterministicL1Header, l2Output, err = pr.getDeterministicL1Header(ctx, finalizedL2Number)
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrapf(err, "failed to get deterministic L1 header: number=%d", finalizedL2Number)
 		}
 		if finalizedL1Header.ExecutionUpdate.BlockNumber >= deterministicL1Header.ExecutionUpdate.BlockNumber {
 			break
@@ -121,15 +122,15 @@ func (pr *Prover) SetupHeadersForUpdate(ctx context.Context, counterparty core.F
 
 	latestHeightOnDstChain, err := counterparty.LatestHeight(ctx)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "failed to get latest height")
 	}
 	csRes, err := counterparty.QueryClientState(core.NewQueryContext(ctx, latestHeightOnDstChain))
 	if err != nil {
-		return nil, fmt.Errorf("no client state found : SetupHeadersForUpdate: height = %d, %+v", latestHeightOnDstChain.GetRevisionHeight(), err)
+		return nil, errors.Wrapf(err, "no client state found : SetupHeadersForUpdate: height=%d", latestHeightOnDstChain.GetRevisionHeight())
 	}
 	var cs exported.ClientState
 	if err = pr.l2Client.Codec().UnpackAny(csRes.ClientState, &cs); err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "failed unpack client state")
 	}
 	trustedHeight := clienttypes.NewHeight(cs.GetLatestHeight().GetRevisionNumber(), cs.GetLatestHeight().GetRevisionHeight())
 
@@ -148,13 +149,13 @@ func (pr *Prover) SetupHeadersForUpdate(ctx context.Context, counterparty core.F
 	// Collect L1 headers from trusted to deterministic and deterministic to latest by trusted l2
 	trustedOutput, err := pr.l2Client.OutputAtBlock(ctx, trustedHeight.RevisionHeight)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "failed to get output root at block: number=%d", trustedHeight.RevisionHeight)
 	}
 	trustedL1BlockNumber := trustedOutput.BlockRef.DeterministicFinalizedL1()
 	latestL1 := latest.DeterministicToLatest[1]
 	headerChunk, err := pr.splitHeaders(ctx, trustedL1BlockNumber, trustedOutput, latest)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "failed to split headers")
 	}
 	logger := pr.GetLogger()
 
@@ -169,15 +170,15 @@ func (pr *Prover) SetupHeadersForUpdate(ctx context.Context, counterparty core.F
 		}
 		ih.AccountUpdate, err = pr.l2Client.BuildAccountUpdate(ctx, chunk.ClaimingOutput.BlockRef.Number)
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrapf(err, "failed to build account update: number=%d", chunk.ClaimingOutput.BlockRef.Number)
 		}
 		ih.TrustedToDeterministic, err = pr.l1Client.GetSyncCommitteesFromTrustedToLatest(ctx, chunk.TrustedL1Number, chunk.DeterministicL1)
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrapf(err, "failed to get sync committiees from trusted to latest: trusted=%d, deterministic=%d", chunk.TrustedL1Number, chunk.DeterministicL1.ExecutionUpdate.BlockNumber)
 		}
 		ih.DeterministicToLatest, err = pr.l1Client.GetSyncCommitteesFromTrustedToLatest(ctx, chunk.DeterministicL1.ExecutionUpdate.BlockNumber, latestL1)
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrapf(err, "failed to get sync committiees from trusted to latest: trusted=%d, deterministic=%d", chunk.DeterministicL1.ExecutionUpdate.BlockNumber, latestL1.ExecutionUpdate.BlockNumber)
 		}
 
 		logger.Info("start preimageRequest", "l2", chunk.ClaimingOutput.BlockRef.Number)
@@ -189,7 +190,7 @@ func (pr *Prover) SetupHeadersForUpdate(ctx context.Context, counterparty core.F
 			L2BlockNumber:      chunk.ClaimingOutput.BlockRef.Number,
 		})
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrapf(err, "failed to make preimage")
 		}
 		logger.Info("success preimageRequest", "l2", chunk.ClaimingOutput.BlockRef.Number, "preimageSize", len(preimage))
 		ih.Preimages = preimage
@@ -255,14 +256,14 @@ func (pr *Prover) CreateInitialLightClientState(ctx context.Context, height expo
 		l2Number = height.GetRevisionHeight()
 		l1Header, trustedOutput, err := pr.getDeterministicL1Header(ctx, l2Number)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, errors.Wrapf(err, "failed to get determinisitic l1 header: l2Number=%d", l2Number)
 		}
 		l2OutputRoot = trustedOutput.OutputRoot[:]
 		l1Number = l1Header.ExecutionUpdate.BlockNumber
 	} else {
 		finalized, err := pr.GetLatestFinalizedHeader(ctx)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, errors.Wrap(err, "failed to get latest finalized header")
 		}
 		header := finalized.(*types.Header)
 		derivation := header.Derivation
@@ -274,30 +275,30 @@ func (pr *Prover) CreateInitialLightClientState(ctx context.Context, height expo
 	// L1 information
 	rollupConfig, err := pr.l2Client.RollupConfigBytes(ctx)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, errors.Wrap(err, "failed to get roll up config")
 	}
 	chainID, err := pr.l2Client.Client().ChainID(ctx)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, errors.Wrap(err, "failed to get chain id from l2")
 	}
 	timestamp, err := pr.l2Client.TimestampAt(ctx, l2Number)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, errors.Wrapf(err, "failed to get timestamp at : l2Number=%d", l2Number)
 	}
 
 	// L1 information
 	l1InitialState, err := pr.l1Client.BuildInitialState(ctx, l1Number)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, errors.Wrapf(err, "failed to build l1 initial state: l1Number=%d", l1Number)
 	}
 	l1Config, err := pr.l1Client.BuildL1Config(l1InitialState, pr.maxClockDrift, pr.trustingPeriod)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, errors.Wrapf(err, "failed to build l1 config")
 	}
 
 	accountUpdate, err := pr.l2Client.BuildAccountUpdate(ctx, l2Number)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, errors.Wrapf(err, "failed to build account update for initial state: number=%d", l2Number)
 	}
 	pr.GetLogger().Info("CreateInitialLightClientState", "l1", l1Number, "l2", l2Number, "slot", l1InitialState.Slot, "period", l1InitialState.Period, "storageRoot", common.Bytes2Hex(accountUpdate.AccountStorageRoot))
 	clientState := &types.ClientState{
@@ -352,11 +353,11 @@ func (pr *Prover) SetupForRelay(ctx context.Context) error {
 func (pr *Prover) getDeterministicL1Header(ctx context.Context, l2Number uint64) (*types.L1Header, *l2.OutputResponse, error) {
 	l2Output, err := pr.l2Client.OutputAtBlock(ctx, l2Number)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, errors.Wrapf(err, "failed to get output at block: l2Number=%d", l2Number)
 	}
 	l1Header, err := pr.l1Client.GetConsensusHeaderByBlockNumber(ctx, l2Output.BlockRef.DeterministicFinalizedL1())
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, errors.Wrapf(err, "failed to get l1 consensus: l1Number=%d", l2Output.BlockRef.DeterministicFinalizedL1())
 	}
 	return l1Header, l2Output, nil
 }
@@ -386,7 +387,7 @@ func (pr *Prover) splitHeaders(ctx context.Context, trustedL1BlockNumber uint64,
 	for i, l2Number := range l2Numbers {
 		deterministicL1, claimingOutput, err := pr.getDeterministicL1Header(ctx, l2Number)
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrapf(err, "failed to get determinisitic l1 header: l2Number=%d", l2Number)
 		}
 		chunk[i] = &HeaderChunk{
 			TrustedOutput:   nextTrustedL2,
