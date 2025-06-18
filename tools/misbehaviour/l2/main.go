@@ -67,6 +67,7 @@ func run(ctx context.Context) error {
 	proverL1Client, err := l1.NewL1Client(ctx,
 		fmt.Sprintf("http://localhost:%d", hostPort.L1BeaconPort),
 		executionNode,
+		log.GetLogger().WithModule("l1"),
 	)
 	if err != nil {
 		return errors.WithStack(err)

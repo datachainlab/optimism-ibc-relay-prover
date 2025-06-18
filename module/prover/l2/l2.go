@@ -38,6 +38,7 @@ type L2Client struct {
 	preimageMakerTimeout  time.Duration
 	preimageMakerEndpoint string
 	opNodeEndpoint        string
+	logger                *log.RelayLogger
 }
 
 func NewL2Client(chain *ethereum.Chain,
@@ -45,6 +46,7 @@ func NewL2Client(chain *ethereum.Chain,
 	preimageMakerTimeout time.Duration,
 	preimageMakerEndpoint string,
 	opNodeEndpoint string,
+	logger *log.RelayLogger,
 ) *L2Client {
 	l1ExecutionClient, err := ethclient.Dial(l1ExecutionEndpoint)
 	if err != nil {
@@ -56,6 +58,7 @@ func NewL2Client(chain *ethereum.Chain,
 		preimageMakerTimeout:  preimageMakerTimeout,
 		preimageMakerEndpoint: preimageMakerEndpoint,
 		opNodeEndpoint:        opNodeEndpoint,
+		logger:                logger,
 	}
 }
 
@@ -110,7 +113,7 @@ func (c *L2Client) BuildAccountUpdate(ctx context.Context, blockNumber uint64) (
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to get account proof: number=%d", blockNumber)
 	}
-	log.GetLogger().Info("buildAccountUpdate: get proof", "block_number", blockNumber, "ibc_address", c.Chain.Config().IBCAddress().String(), "account_proof", hex.EncodeToString(proof.AccountProofRLP), "storage_hash", hex.EncodeToString(proof.StorageHash[:]))
+	c.logger.Info("buildAccountUpdate: get proof", "block_number", blockNumber, "ibc_address", c.Chain.Config().IBCAddress().String(), "account_proof", hex.EncodeToString(proof.AccountProofRLP), "storage_hash", hex.EncodeToString(proof.StorageHash[:]))
 	return &lctypes.AccountUpdate{
 		AccountProof:       proof.AccountProofRLP,
 		AccountStorageRoot: proof.StorageHash[:],

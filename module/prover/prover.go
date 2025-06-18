@@ -32,12 +32,21 @@ type Prover struct {
 	maxHeaderConcurrency uint64
 	maxL2NumsForPreimage uint64
 
-	codec codec.ProtoCodecMarshaler
+	logger *log.RelayLogger
+	codec  codec.ProtoCodecMarshaler
 }
 
-//--------- StateProver implementation ---------//
-
 var _ core.StateProver = (*Prover)(nil)
+var _ core.Prover = (*Prover)(nil)
+
+func (pr *Prover) GetLogger() *log.RelayLogger {
+	return pr.logger
+}
+
+func (pr *Prover) Init(homePath string, timeout time.Duration, codec codec.ProtoCodecMarshaler, debug bool) error {
+	pr.codec = codec
+	return nil
+}
 
 func (pr *Prover) ProveState(ctx core.QueryContext, path string, value []byte) ([]byte, clienttypes.Height, error) {
 	proofHeight := ctx.Height().GetRevisionHeight()
@@ -48,18 +57,6 @@ func (pr *Prover) ProveState(ctx core.QueryContext, path string, value []byte) (
 
 func (pr *Prover) ProveHostConsensusState(ctx core.QueryContext, height exported.Height, consensusState exported.ConsensusState) (proof []byte, err error) {
 	return clienttypes.MarshalConsensusState(pr.codec, consensusState)
-}
-
-func (pr *Prover) GetLogger() *log.RelayLogger {
-	return log.GetLogger().WithChain(pr.l2Client.ChainID()).WithModule(ModuleName)
-}
-
-var _ core.Prover = (*Prover)(nil)
-
-// Init initializes the chain
-func (pr *Prover) Init(homePath string, timeout time.Duration, codec codec.ProtoCodecMarshaler, debug bool) error {
-	pr.codec = codec
-	return nil
 }
 
 func (pr *Prover) GetLatestFinalizedHeader(ctx context.Context) (latestFinalizedHeader core.Header, err error) {
@@ -157,7 +154,6 @@ func (pr *Prover) SetupHeadersForUpdate(ctx context.Context, counterparty core.F
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to split headers")
 	}
-	logger := pr.GetLogger()
 
 	return pr.makeHeaderChan(ctx, headerChunk, func(ctx context.Context, chunk *HeaderChunk) (core.Header, error) {
 		ih := &types.Header{
@@ -178,10 +174,10 @@ func (pr *Prover) SetupHeadersForUpdate(ctx context.Context, counterparty core.F
 		}
 		ih.DeterministicToLatest, err = pr.l1Client.GetSyncCommitteesFromTrustedToLatest(ctx, chunk.DeterministicL1.ExecutionUpdate.BlockNumber, latestL1)
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to get sync committiees from trusted to latest: trusted=%d, deterministic=%d", chunk.DeterministicL1.ExecutionUpdate.BlockNumber, latestL1.ExecutionUpdate.BlockNumber)
+			return nil, errors.Wrapf(err, "failed to get sync committiees from trusted to latest: deterministic=%d, latest=%d", chunk.DeterministicL1.ExecutionUpdate.BlockNumber, latestL1.ExecutionUpdate.BlockNumber)
 		}
 
-		logger.Info("start preimageRequest", "l2", chunk.ClaimingOutput.BlockRef.Number)
+		pr.GetLogger().Info("start preimageRequest", "l2", chunk.ClaimingOutput.BlockRef.Number)
 		preimage, err := pr.l2Client.CreatePreimages(ctx, &l2.PreimageRequest{
 			L1HeadHash:         common.BytesToHash(latestL1.ExecutionUpdate.BlockHash),
 			AgreedL2HeadHash:   chunk.TrustedOutput.BlockRef.Hash,
@@ -192,7 +188,7 @@ func (pr *Prover) SetupHeadersForUpdate(ctx context.Context, counterparty core.F
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to make preimage")
 		}
-		logger.Info("success preimageRequest", "l2", chunk.ClaimingOutput.BlockRef.Number, "preimageSize", len(preimage))
+		pr.GetLogger().Info("success preimageRequest", "l2", chunk.ClaimingOutput.BlockRef.Number, "preimageSize", len(preimage))
 		ih.Preimages = preimage
 
 		return ih, nil
@@ -245,9 +241,6 @@ func (pr *Prover) CheckRefreshRequired(ctx context.Context, counterparty core.Ch
 	return needsRefresh, nil
 }
 
-// CreateInitialLightClientState returns a pair of ClientState and ConsensusState based on the state of the self chain at `height`.
-// These states will be submitted to the counterparty chain as MsgCreateClient.
-// If `height` is nil, the latest finalized height is selected automatically.
 func (pr *Prover) CreateInitialLightClientState(ctx context.Context, height exported.Height) (exported.ClientState, exported.ConsensusState, error) {
 	var l2Number uint64
 	var l2OutputRoot []byte
@@ -272,7 +265,7 @@ func (pr *Prover) CreateInitialLightClientState(ctx context.Context, height expo
 		l1Number = header.DeterministicToLatest[0].ExecutionUpdate.BlockNumber
 	}
 
-	// L1 information
+	// L2
 	rollupConfig, err := pr.l2Client.RollupConfigBytes(ctx)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "failed to get roll up config")
@@ -286,7 +279,7 @@ func (pr *Prover) CreateInitialLightClientState(ctx context.Context, height expo
 		return nil, nil, errors.Wrapf(err, "failed to get timestamp at : l2Number=%d", l2Number)
 	}
 
-	// L1 information
+	// L1
 	l1InitialState, err := pr.l1Client.BuildInitialState(ctx, l1Number)
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "failed to build l1 initial state: l1Number=%d", l1Number)
@@ -296,6 +289,7 @@ func (pr *Prover) CreateInitialLightClientState(ctx context.Context, height expo
 		return nil, nil, errors.Wrapf(err, "failed to build l1 config")
 	}
 
+	// account
 	accountUpdate, err := pr.l2Client.BuildAccountUpdate(ctx, l2Number)
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "failed to build account update for initial state: number=%d", l2Number)
@@ -340,12 +334,10 @@ func (pr *Prover) CreateInitialLightClientState(ctx context.Context, height expo
 	return clientState, consensusState, nil
 }
 
-// SetRelayInfo sets source's path and counterparty's info to the chain
 func (pr *Prover) SetRelayInfo(path *core.PathEnd, counterparty *core.ProvableChain, counterpartyPath *core.PathEnd) error {
 	return nil
 }
 
-// SetupForRelay performs chain-specific setup before starting the relay
 func (pr *Prover) SetupForRelay(ctx context.Context) error {
 	return nil
 }
@@ -370,10 +362,8 @@ type HeaderChunk struct {
 }
 
 func (pr *Prover) splitHeaders(ctx context.Context, trustedL1BlockNumber uint64, trustedL2 *l2.OutputResponse, latestHeader *types.Header) ([]*HeaderChunk, error) {
-	logger := log.GetLogger()
-
 	l2Numbers := make([]uint64, 0)
-	logger.Info("split headers", "trustedL2", trustedL2.BlockRef.Number, "latestL2Header", latestHeader.Derivation.L2BlockNumber)
+	pr.GetLogger().Info("split headers", "trustedL2", trustedL2.BlockRef.Number, "latestL2Header", latestHeader.Derivation.L2BlockNumber)
 
 	for start := trustedL2.BlockRef.Number + pr.maxL2NumsForPreimage; start < latestHeader.Derivation.L2BlockNumber; start += pr.maxL2NumsForPreimage {
 		l2Numbers = append(l2Numbers, start)
@@ -395,7 +385,7 @@ func (pr *Prover) splitHeaders(ctx context.Context, trustedL1BlockNumber uint64,
 			DeterministicL1: deterministicL1,
 			ClaimingOutput:  claimingOutput,
 		}
-		logger.Info("header chunk",
+		pr.GetLogger().Info("header chunk",
 			"l2", chunk[i].ClaimingOutput.BlockRef.Number,
 			"trusted_l2", chunk[i].TrustedOutput.BlockRef.Number,
 			"trusted_l1_num", chunk[i].TrustedL1Number,
@@ -430,7 +420,6 @@ func (pr *Prover) makeHeaderChan(ctx context.Context, requests []*HeaderChunk, f
 		}
 	}()
 
-	logger := pr.GetLogger()
 	// sequencer
 	go func() {
 		defer close(out)
@@ -444,9 +433,9 @@ func (pr *Prover) makeHeaderChan(ctx context.Context, requests []*HeaderChunk, f
 				if result.Header != nil {
 					ih := result.Header.(*types.Header)
 					args := append([]interface{}{"sequence", sequence}, ih.ToLog()...)
-					logger.Info("deliver header success", args...)
+					pr.GetLogger().Info("deliver header success", args...)
 				} else {
-					logger.Debug("deliver header error", "sequence", sequence, "err", result.Error)
+					pr.GetLogger().Debug("deliver header error", "sequence", sequence, "err", result.Error)
 				}
 
 				// Always deliver in order from zero.
@@ -471,6 +460,7 @@ func NewProver(chain *ethereum.Chain,
 	maxClockDrift time.Duration,
 	maxHeaderConcurrency uint64,
 	maxL2NumsForPreimage uint64,
+	logger *log.RelayLogger,
 ) *Prover {
 	if maxL2NumsForPreimage == 0 {
 		maxL2NumsForPreimage = 100
@@ -484,5 +474,6 @@ func NewProver(chain *ethereum.Chain,
 		maxHeaderConcurrency: max(maxHeaderConcurrency, 1),
 		maxL2NumsForPreimage: maxL2NumsForPreimage,
 		codec:                chain.Codec(),
+		logger:               logger,
 	}
 }

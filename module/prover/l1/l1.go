@@ -27,6 +27,7 @@ type L1Client struct {
 	beaconClient    beacon.Client
 	executionClient *ethclient.Client
 	config          *ProverConfig
+	logger          *log.RelayLogger
 }
 
 func (pr *L1Client) BuildL1Config(state *InitialState, maxClockDrift, trustingPeriod time.Duration) (*types.L1Config, error) {
@@ -134,7 +135,7 @@ func (pr *L1Client) GetSyncCommitteesFromTrustedToLatest(ctx context.Context, tr
 	}
 	statePeriod := pr.computeSyncCommitteePeriod(pr.computeEpoch(slot))
 	latestPeriod := pr.computeSyncCommitteePeriod(pr.computeEpoch(lfh.ConsensusUpdate.SignatureSlot))
-	log.GetLogger().Debug("GetSyncCommitteesFromTrustedToLatest", "statePeriod", statePeriod, "latestPeriod", latestPeriod)
+	pr.logger.Debug("GetSyncCommitteesFromTrustedToLatest", "statePeriod", statePeriod, "latestPeriod", latestPeriod)
 	res, err := pr.beaconClient.GetLightClientUpdate(ctx, statePeriod)
 	if err != nil {
 		return nil, errors.WithStack(err)
@@ -245,7 +246,7 @@ func (pr *L1Client) BuildNextSyncCommitteeUpdate(ctx context.Context, period uin
 	}, nil
 }
 
-func NewL1Client(ctx context.Context, l1BeaconEndpoint, l1ExecutionEndpoint string) (*L1Client, error) {
+func NewL1Client(ctx context.Context, l1BeaconEndpoint, l1ExecutionEndpoint string, logger *log.RelayLogger) (*L1Client, error) {
 	beaconClient := beacon.NewClient(l1BeaconEndpoint)
 	executionClient, err := ethclient.DialContext(ctx, l1ExecutionEndpoint)
 	if err != nil {
@@ -270,5 +271,6 @@ func NewL1Client(ctx context.Context, l1BeaconEndpoint, l1ExecutionEndpoint stri
 			Network:          network,
 			MinimalForkSched: nil,
 		},
+		logger: logger,
 	}, nil
 }

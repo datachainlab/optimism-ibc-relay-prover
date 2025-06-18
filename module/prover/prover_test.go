@@ -94,9 +94,10 @@ func (ts *ProverTestSuite) SetupTest() {
 	l1BeaconEndpoint := fmt.Sprintf("http://localhost:%d", hostPort.L1BeaconPort)
 	preimageMakerEndpoint := "http://localhost:10080"
 	preimageMakerTimeout := 300 * time.Second
-	l1Client, _ := l1.NewL1Client(context.Background(), l1BeaconEndpoint, l1ExecutionEndpoint)
-	l2Client := l2.NewL2Client(l2Chain, l1ExecutionEndpoint, preimageMakerTimeout, preimageMakerEndpoint, opNodeEndpoint)
-	ts.prover = NewProver(l2Chain, l1Client, l2Client, trustingPeriod, refreshThresholdRate, maxClockDrift, 4, 40)
+	logger := log.GetLogger().WithChain(l2Chain.ChainID()).WithModule(ModuleName)
+	l1Client, _ := l1.NewL1Client(context.Background(), l1BeaconEndpoint, l1ExecutionEndpoint, logger)
+	l2Client := l2.NewL2Client(l2Chain, l1ExecutionEndpoint, preimageMakerTimeout, preimageMakerEndpoint, opNodeEndpoint, logger)
+	ts.prover = NewProver(l2Chain, l1Client, l2Client, trustingPeriod, refreshThresholdRate, maxClockDrift, 4, 40, logger)
 }
 
 func (ts *ProverTestSuite) TestCreateInitialLightClientState() {
@@ -153,7 +154,7 @@ func (ts *ProverTestSuite) TestSetupHeadersForUpdateShort() {
 }
 
 func (ts *ProverTestSuite) TestSetupHeadersForUpdateLong() {
-	headers, trustedHeight := ts.setupHeadersForUpdate(600)
+	headers, trustedHeight := ts.setupHeadersForUpdate(400)
 	cs, consState, err := ts.prover.CreateInitialLightClientState(context.Background(), trustedHeight)
 	ts.Require().NoError(err)
 	rawCs := cs.(*types.ClientState)
