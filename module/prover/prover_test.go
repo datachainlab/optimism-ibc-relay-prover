@@ -121,9 +121,6 @@ func (ts *ProverTestSuite) TestGetLatestFinalizedHeader() {
 
 func (ts *ProverTestSuite) TestSetupHeadersForUpdateShort() {
 	headers, trustedHeight := ts.setupHeadersForUpdate(1)
-	if os.Getenv("DISABLE_OUTPUT_TESTDATA") == "true" {
-		return
-	}
 	cs, consState, err := ts.prover.CreateInitialLightClientState(context.Background(), trustedHeight)
 	ts.Require().NoError(err)
 	rawUpdateClient, err := clienttypes.PackClientMessage(headers[0])
@@ -158,9 +155,6 @@ func (ts *ProverTestSuite) TestSetupHeadersForUpdateShort() {
 
 func (ts *ProverTestSuite) TestSetupHeadersForUpdateLong() {
 	headers, trustedHeight := ts.setupHeadersForUpdate(400)
-	if os.Getenv("DISABLE_OUTPUT_TESTDATA") == "true" {
-		return
-	}
 	cs, consState, err := ts.prover.CreateInitialLightClientState(context.Background(), trustedHeight)
 	ts.Require().NoError(err)
 	rawCs := cs.(*types.ClientState)

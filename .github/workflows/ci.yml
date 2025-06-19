@@ -22,6 +22,9 @@ jobs:
       - uses: extractions/setup-just@v2
         with:
           just-version: 1.40.0
+      - name: Clean up unnecessary docker volumes
+        run: |
+          docker system prune -a --volumes -f
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
       - name: Install kurtosis
@@ -45,6 +48,10 @@ jobs:
           cd optimism-preimage-maker
           make server-up &
           make wait
+      - name: Clean up cache
+        run: |
+          sudo rm -rf $HOME/.cargo/registry
+          sudo rm -rf $HOME/.cache
       - name: Prepare contract
         run: |
           make set-port
@@ -54,5 +61,3 @@ jobs:
           PREIMAGE_MAKER: ./
       - name: Test
         run: go test ./...
-        env:
-          DISABLE_OUTPUT_TESTDATA: true
