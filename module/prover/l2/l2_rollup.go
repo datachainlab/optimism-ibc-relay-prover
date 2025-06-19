@@ -67,10 +67,10 @@ func (c *L2Client) call(ctx context.Context, method string, params []interface{}
 		Timeout: c.preimageMakerTimeout,
 	}
 	httpRequest, err := http.NewRequestWithContext(ctx, "POST", c.opNodeEndpoint, bytes.NewBuffer(body))
-	httpRequest.Header.Set("Content-Type", "application/json")
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to make http request for op-node: method=%s", method)
 	}
+	httpRequest.Header.Set("Content-Type", "application/json")
 	response, err := httpClient.Do(httpRequest)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to call op-node: method=%s", method)
