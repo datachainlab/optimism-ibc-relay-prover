@@ -54,3 +54,5 @@ jobs:
           PREIMAGE_MAKER: ./
       - name: Test
         run: go test ./...
+        env:
+          DISABLE_OUTPUT_TESTDATA: true
