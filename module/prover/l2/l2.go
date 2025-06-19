@@ -83,6 +83,7 @@ func (c *L2Client) CreatePreimages(ctx context.Context, request *PreimageRequest
 	buffer := bytes.NewBuffer(body)
 
 	httpRequest, err := http.NewRequestWithContext(ctx, "POST", c.preimageMakerEndpoint+"/derivation", buffer)
+	httpRequest.Header.Set("Content-Type", "application/json")
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to call preimage request")
 	}
