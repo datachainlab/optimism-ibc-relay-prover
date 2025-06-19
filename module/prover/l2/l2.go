@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"github.com/cockroachdb/errors"
 	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/relay/ethereum"
 	lctypes "github.com/datachainlab/optimism-ibc-relay-prover/module/types"
@@ -76,14 +75,20 @@ func (c *L2Client) CreatePreimages(ctx context.Context, request *PreimageRequest
 	httpClient := http.Client{
 		Timeout: c.preimageMakerTimeout,
 	}
+
 	body, err := json.Marshal(request)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to marshal preimage request")
 	}
 	buffer := bytes.NewBuffer(body)
-	response, err := httpClient.Post(fmt.Sprintf("%s/derivation", c.preimageMakerEndpoint), "application/json", buffer)
+
+	httpRequest, err := http.NewRequestWithContext(ctx, "POST", c.preimageMakerEndpoint+"/derivation", buffer)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to call preimage request")
+	}
+	response, err := httpClient.Do(httpRequest)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to make preimage request")
 	}
 	if response.StatusCode != http.StatusOK {
 		return nil, errors.Errorf("failed to create preimages: status=%d", response.StatusCode)

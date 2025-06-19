@@ -60,4 +60,6 @@ jobs:
         env:
           PREIMAGE_MAKER: ./
       - name: Test
-        run: go test ./...
+        run: |
+          docker ps
+          go test ./...
