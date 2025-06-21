@@ -56,7 +56,7 @@ jobs:
         run: |
           make set-port
           make contracts
-          sleep 120
+          sleep 180
           go test ./...
         env:
           PREIMAGE_MAKER: ./
