@@ -54,7 +54,7 @@ func run(ctx context.Context) error {
 	if err = json.Unmarshal(hostPortJson, &hostPort); err != nil {
 		return errors.WithStack(err)
 	}
-	disputeGameFactoryProxyAddr := common.HexToAddress("0x41569d8c2612a380c4fdc425845246c41bc4f4ad")
+	disputeGameFactoryProxyAddr := common.HexToAddress("0x3089cc51dc6618b0b23d8c1788891381bb3fd82a")
 	executionNode := fmt.Sprintf("http://localhost:%d", hostPort.L1GethPort)
 	l1Client, err := ethclient.Dial(executionNode)
 	if err != nil {
@@ -200,6 +200,34 @@ func run(ctx context.Context) error {
 	fmt.Printf("ConsState: %s\n", common.Bytes2Hex(consStateBytes))
 	fmt.Printf("now: %d\n", time.Now().Unix())
 
+	honestL2History, honestOutput, err := createHonestL2History(ctx, config, resolvedL2, trustedL2Num, consStateMPProof)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	misbehaviour = types.Misbehaviour{
+		ClientId: "optimism-01",
+		TrustedHeight: &types2.Height{
+			RevisionNumber: 0,
+			RevisionHeight: trustedL2Num.Uint64(),
+		},
+		FirstL2ToL1MessagePasserAccount: consStateMPProof,
+		LastL2ToL1MessagePasserAccount:  resolvedMPProof,
+		ResolvedOutputRoot:              resolvedOutputRoot[:],
+		L2HeaderHistory:                 honestL2History,
+		FaultDisputeGameFactoryProof:    resolvedFaultDisputeGame,
+	}
+	clientMessage, err = types2.PackClientMessage(&misbehaviour)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	misbehaviourBytes, err = clientMessage.Marshal()
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	if err = os.WriteFile("submit_misbehaviour_not_misbehaviour.bin", misbehaviourBytes, 0644); err != nil {
+		return errors.WithStack(err)
+	}
+	fmt.Printf("honest output root: %s\n", common.Bytes2Hex(honestOutput))
 	return nil
 }
 
@@ -231,6 +259,35 @@ func createFaultyL2History(ctx context.Context, config *Config, resolvedNum *big
 		BlockHash:                faultyTrustedHeader.Hash(),
 	})
 	return faultyL2HistoryRLPs, output[:], nil
+}
+
+func createHonestL2History(ctx context.Context, config *Config, resolvedNum *big.Int, trustedNum *big.Int, consStateMPProof *types.AccountUpdate) ([][]byte, []byte, error) {
+
+	// Construct Faulty L2 History
+	l2HistoryRLPs := make([][]byte, 2)
+	resolvedHeader, err := config.L2Client.HeaderByNumber(ctx, resolvedNum)
+	if err != nil {
+		return nil, nil, errors.WithStack(err)
+	}
+	l2HistoryRLPs[1], err = rlp.EncodeToBytes(resolvedHeader)
+	if err != nil {
+		return nil, nil, errors.WithStack(err)
+	}
+	faultyTrustedHeader, err := config.L2Client.HeaderByNumber(ctx, trustedNum)
+	if err != nil {
+		return nil, nil, errors.WithStack(err)
+	}
+	faultyTrustedHeader.ParentHash = resolvedHeader.Hash()
+	l2HistoryRLPs[0], err = rlp.EncodeToBytes(faultyTrustedHeader)
+	if err != nil {
+		return nil, nil, errors.WithStack(err)
+	}
+	output := eth.OutputRoot(&eth.OutputV0{
+		StateRoot:                eth.Bytes32(faultyTrustedHeader.Root),
+		MessagePasserStorageRoot: eth.Bytes32(consStateMPProof.AccountStorageRoot),
+		BlockHash:                faultyTrustedHeader.Hash(),
+	})
+	return l2HistoryRLPs, output[:], nil
 }
 
 func createMessagePasserAccountProof(ctx context.Context, config *Config, l2BlockNum *big.Int) (*types.AccountUpdate, error) {
