@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/cockroachdb/errors"
 	types2 "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
-	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/client"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/types"
 	"github.com/datachainlab/optimism-ibc-relay-prover/tools/misbehaviour/l2"
 	"github.com/ethereum/go-ethereum/common"
@@ -107,7 +106,7 @@ func run(ctx context.Context) error {
 		return errors.WithStack(err)
 	}
 	if len(l1History) == 0 {
-		return errors.New("l1 history is empty, please check the L1 client connection")
+		return errors.New("l1 history is empty")
 	}
 
 	misbehaviour := types.Misbehaviour{
@@ -132,9 +131,11 @@ func run(ctx context.Context) error {
 		LatestHeight: misbehaviour.TrustedHeight,
 		L1Config:     l1Config,
 		FaultDisputeGameConfig: &types.FaultDisputeGameConfig{
+			DisputeGameFactoryAddress:           config.DisputeGameFactoryAddress.Bytes(),
 			DisputeGameFactoryTargetStorageSlot: 103,
 			FaultDisputeGameStatusSlot:          0,
 			FaultDisputeGameStatusSlotOffset:    15,
+			FaultDisputeGameCreatedAtSlotOffset: 24,
 			StatusDefenderWin:                   2,
 		},
 	}
@@ -187,39 +188,4 @@ func createL1History(ctx context.Context, config *l2.Config, resolvedNum uint64,
 		history = append(history, encoded)
 	}
 	return history, nil
-}
-
-func createGameFactoryProof(
-	ctx context.Context,
-	targetGameType uint32,
-	config *l2.Config,
-	l1Number *big.Int,
-	l2BlockNum *big.Int,
-	rootClaim [32]byte,
-) (*client.StateProof, error) {
-	// Get GameUUID
-	gameUUID, err := config.DisputeGameFactoryCaller.GetGameUUID(nil, targetGameType, rootClaim, common.BytesToHash(l2BlockNum.Bytes()).Bytes())
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
-	slotForGameId := l2.CalculateMappingSlotBytes(gameUUID[:], uint64(103))
-	fmt.Printf("gameUUID=%s, slotForGameId %v\n", common.Bytes2Hex(gameUUID[:]), slotForGameId.String())
-
-	l1ProofGetter, err := client.NewETHClientWith(config.L1Client)
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
-	// Get Proof of DisputeGameFactoryProxy.sol
-	marshallSlotForGameId, err := slotForGameId.MarshalText()
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
-	disputeGameFactoryAccountProof, err := l1ProofGetter.GetProof(ctx,
-		config.DisputeGameFactoryAddress,
-		[][]byte{marshallSlotForGameId},
-		l1Number)
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
-	return disputeGameFactoryAccountProof, nil
 }

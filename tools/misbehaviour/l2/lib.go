@@ -173,8 +173,7 @@ func CreateGameProof(
 	}
 
 	disputeGameFactoryProof := types.FaultDisputeGameFactoryProof{
-		StateRoot:                 l1Header.StateRoot,
-		DisputeGameFactoryAddress: config.DisputeGameFactoryAddress.Bytes(),
+		StateRoot: l1Header.StateRoot,
 		DisputeGameFactoryAccount: &types.AccountUpdate{
 			AccountProof:       disputeGameFactoryAccountProof.AccountProofRLP,
 			AccountStorageRoot: disputeGameFactoryAccountProof.StorageHash[:],

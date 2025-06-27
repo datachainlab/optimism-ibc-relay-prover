@@ -95,8 +95,10 @@ func run(ctx context.Context) error {
 			RevisionNumber: 0,
 			RevisionHeight: trustedL2Num.Uint64(),
 		},
+		LatestL1Header:                  l1Header,
 		FirstL2ToL1MessagePasserAccount: consStateMPProof,
 		LastL2ToL1MessagePasserAccount:  resolvedMPProof,
+		ResolvedL2Number:                resolvedL2.Uint64(),
 		ResolvedOutputRoot:              resolvedOutputRoot[:],
 		L2HeaderHistory:                 faultyL2History,
 		FaultDisputeGameFactoryProof:    resolvedFaultDisputeGame,
@@ -110,9 +112,11 @@ func run(ctx context.Context) error {
 		LatestHeight: misbehaviour.TrustedHeight,
 		L1Config:     l1Config,
 		FaultDisputeGameConfig: &types.FaultDisputeGameConfig{
+			DisputeGameFactoryAddress:           config.DisputeGameFactoryAddress.Bytes(),
 			DisputeGameFactoryTargetStorageSlot: 103,
 			FaultDisputeGameStatusSlot:          0,
 			FaultDisputeGameStatusSlotOffset:    15,
+			FaultDisputeGameCreatedAtSlotOffset: 24,
 			StatusDefenderWin:                   2,
 		},
 	}
