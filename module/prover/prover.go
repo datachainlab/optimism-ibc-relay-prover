@@ -245,6 +245,7 @@ func (pr *Prover) CreateInitialLightClientState(ctx context.Context, height expo
 	var l2Number uint64
 	var l2OutputRoot []byte
 	var l1Number uint64
+	var l1Origin uint64
 	if height != nil {
 		l2Number = height.GetRevisionHeight()
 		l1Header, trustedOutput, err := pr.getDeterministicL1Header(ctx, l2Number)
@@ -253,6 +254,7 @@ func (pr *Prover) CreateInitialLightClientState(ctx context.Context, height expo
 		}
 		l2OutputRoot = trustedOutput.OutputRoot[:]
 		l1Number = l1Header.ExecutionUpdate.BlockNumber
+		l1Origin = trustedOutput.BlockRef.L1Origin.Number
 	} else {
 		finalized, err := pr.GetLatestFinalizedHeader(ctx)
 		if err != nil {
@@ -263,6 +265,12 @@ func (pr *Prover) CreateInitialLightClientState(ctx context.Context, height expo
 		l2Number = derivation.L2BlockNumber
 		l2OutputRoot = derivation.L2OutputRoot
 		l1Number = header.DeterministicToLatest[0].ExecutionUpdate.BlockNumber
+
+		output, err := pr.l2Client.OutputAtBlock(ctx, l2Number)
+		if err != nil {
+			return nil, nil, errors.Wrap(err, "failed to get latest finalized header")
+		}
+		l1Origin = output.BlockRef.L1Origin.Number
 	}
 
 	// L2
@@ -330,6 +338,7 @@ func (pr *Prover) CreateInitialLightClientState(ctx context.Context, height expo
 		L1CurrentSyncCommittee: l1InitialState.CurrentSyncCommittee.AggregatePubkey,
 		L1NextSyncCommittee:    l1InitialState.NextSyncCommittee.AggregatePubkey,
 		L1Timestamp:            l1InitialState.Timestamp,
+		L1Origin:               l1Origin,
 	}
 	return clientState, consensusState, nil
 }
