@@ -7,6 +7,7 @@ import (
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l1"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l2"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/hyperledger-labs/yui-relayer/core"
 	"github.com/hyperledger-labs/yui-relayer/log"
 )
@@ -29,7 +30,10 @@ func (c *ProverConfig) Build(chain core.Chain) (core.Prover, error) {
 		c.OpNodeEndpoint,
 		logger,
 	)
-	return prover.NewProver(l2Chain, l1Client, l2Client, c.TrustingPeriod, c.RefreshThresholdRate, c.MaxClockDrift, c.MaxHeaderConcurrency, c.MaxL2NumsForPreimage, logger), nil
+	return prover.NewProver(l2Chain, l1Client, l2Client,
+		c.TrustingPeriod, c.RefreshThresholdRate, c.MaxClockDrift, c.MaxHeaderConcurrency, c.MaxL2NumsForPreimage,
+		common.HexToAddress(c.DisputeGameFactoryAddress),
+		logger), nil
 }
 
 func (c *ProverConfig) Validate() error {

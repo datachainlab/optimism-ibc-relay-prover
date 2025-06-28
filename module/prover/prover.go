@@ -26,11 +26,12 @@ type Prover struct {
 	l2Client *l2.L2Client
 	l1Client *l1.L1Client
 
-	trustingPeriod       time.Duration
-	refreshThresholdRate *types.Fraction
-	maxClockDrift        time.Duration
-	maxHeaderConcurrency uint64
-	maxL2NumsForPreimage uint64
+	trustingPeriod            time.Duration
+	refreshThresholdRate      *types.Fraction
+	maxClockDrift             time.Duration
+	maxHeaderConcurrency      uint64
+	maxL2NumsForPreimage      uint64
+	disputeGameFactoryAddress common.Address
 
 	logger *log.RelayLogger
 	codec  codec.ProtoCodecMarshaler
@@ -312,6 +313,7 @@ func (pr *Prover) CreateInitialLightClientState(ctx context.Context, height expo
 		RollupConfigJson:   rollupConfig,
 		L1Config:           l1Config,
 		FaultDisputeGameConfig: &types.FaultDisputeGameConfig{
+			DisputeGameFactoryAddress: pr.disputeGameFactoryAddress.Bytes(),
 			// forge inspect src/dispute/DisputeGameFactory.sol storage-layout
 			// |------------------+--------------------------------------------+------+--------+-------+-------------------------------------------------------|
 			// | _disputeGames    | mapping(Hash => GameId)                    | 103  | 0      | 32    | src/dispute/DisputeGameFactory.sol:DisputeGameFactory |
@@ -327,7 +329,8 @@ func (pr *Prover) CreateInitialLightClientState(ctx context.Context, height expo
 			//|---------------------------------+------------------------------------------------------------------+------+--------+-------+-------------------------------------
 			FaultDisputeGameStatusSlot: 0,
 			// status offset index is not 16 but 32 - 8 - 8 - 1 = 15 because items are lined up from behind
-			FaultDisputeGameStatusSlotOffset: 15,
+			FaultDisputeGameStatusSlotOffset:    15,
+			FaultDisputeGameCreatedAtSlotOffset: 24,
 		},
 	}
 	consensusState := &types.ConsensusState{
@@ -469,20 +472,22 @@ func NewProver(chain *ethereum.Chain,
 	maxClockDrift time.Duration,
 	maxHeaderConcurrency uint64,
 	maxL2NumsForPreimage uint64,
+	disputeGameFactoryAddress common.Address,
 	logger *log.RelayLogger,
 ) *Prover {
 	if maxL2NumsForPreimage == 0 {
 		maxL2NumsForPreimage = 100
 	}
 	return &Prover{
-		l2Client:             l2Client,
-		l1Client:             l1Client,
-		trustingPeriod:       trustingPeriod,
-		refreshThresholdRate: refreshThresholdRate,
-		maxClockDrift:        maxClockDrift,
-		maxHeaderConcurrency: max(maxHeaderConcurrency, 1),
-		maxL2NumsForPreimage: maxL2NumsForPreimage,
-		codec:                chain.Codec(),
-		logger:               logger,
+		l2Client:                  l2Client,
+		l1Client:                  l1Client,
+		trustingPeriod:            trustingPeriod,
+		refreshThresholdRate:      refreshThresholdRate,
+		maxClockDrift:             maxClockDrift,
+		maxHeaderConcurrency:      max(maxHeaderConcurrency, 1),
+		maxL2NumsForPreimage:      maxL2NumsForPreimage,
+		codec:                     chain.Codec(),
+		disputeGameFactoryAddress: disputeGameFactoryAddress,
+		logger:                    logger,
 	}
 }

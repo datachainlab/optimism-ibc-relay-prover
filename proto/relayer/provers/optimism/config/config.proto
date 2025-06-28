@@ -18,4 +18,5 @@ message ProverConfig {
   map<string, uint64> minimal_fork_sched = 9;
   uint64 max_l2nums_for_preimage = 10;
   uint64 max_header_concurrency = 11;
+  string dispute_game_factory_address = 12;
 }
