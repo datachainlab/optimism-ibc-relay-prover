@@ -128,16 +128,9 @@ func run(ctx context.Context) error {
 	}
 
 	cs := &types.ClientState{
-		LatestHeight: misbehaviour.TrustedHeight,
-		L1Config:     l1Config,
-		FaultDisputeGameConfig: &types.FaultDisputeGameConfig{
-			DisputeGameFactoryAddress:           config.DisputeGameFactoryAddress.Bytes(),
-			DisputeGameFactoryTargetStorageSlot: 103,
-			FaultDisputeGameStatusSlot:          0,
-			FaultDisputeGameStatusSlotOffset:    15,
-			FaultDisputeGameCreatedAtSlotOffset: 24,
-			StatusDefenderWin:                   2,
-		},
+		LatestHeight:           misbehaviour.TrustedHeight,
+		L1Config:               l1Config,
+		FaultDisputeGameConfig: config.ToFaultDisputeGameConfig(),
 	}
 
 	consState := types.ConsensusState{
@@ -169,6 +162,19 @@ func run(ctx context.Context) error {
 	fmt.Printf("ClientState: %s\n", common.Bytes2Hex(csBytes))
 	fmt.Printf("ConsState: %s\n", common.Bytes2Hex(consStateBytes))
 	fmt.Printf("now: %d\n", time.Now().Unix())
+
+	misbehaviour.TrustedHeight.RevisionHeight = resolvedL2.Uint64()
+	clientMessage, err = types2.PackClientMessage(&misbehaviour)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	misbehaviourBytes, err = clientMessage.Marshal()
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	if err = os.WriteFile("submit_misbehaviour_not_misbehaviour_future.bin", misbehaviourBytes, 0644); err != nil {
+		return errors.WithStack(err)
+	}
 	return nil
 }
 

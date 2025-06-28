@@ -76,6 +76,17 @@ func NewConfig(ctx context.Context) (*Config, error) {
 	return config, nil
 }
 
+func (config *Config) ToFaultDisputeGameConfig() *types.FaultDisputeGameConfig {
+	return &types.FaultDisputeGameConfig{
+		DisputeGameFactoryAddress:           config.DisputeGameFactoryAddress.Bytes(),
+		DisputeGameFactoryTargetStorageSlot: 103,
+		FaultDisputeGameStatusSlot:          0,
+		FaultDisputeGameStatusSlotOffset:    15,
+		FaultDisputeGameCreatedAtSlotOffset: 24,
+		StatusDefenderWin:                   2,
+	}
+}
+
 func CreateMessagePasserAccountProof(ctx context.Context, config *Config, l2BlockNum *big.Int) (*types.AccountUpdate, error) {
 	l2ProofGetter, err := client.NewETHClientWith(config.L2Client)
 	if err != nil {

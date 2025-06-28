@@ -109,16 +109,9 @@ func run(ctx context.Context) error {
 	}
 
 	cs := &types.ClientState{
-		LatestHeight: misbehaviour.TrustedHeight,
-		L1Config:     l1Config,
-		FaultDisputeGameConfig: &types.FaultDisputeGameConfig{
-			DisputeGameFactoryAddress:           config.DisputeGameFactoryAddress.Bytes(),
-			DisputeGameFactoryTargetStorageSlot: 103,
-			FaultDisputeGameStatusSlot:          0,
-			FaultDisputeGameStatusSlotOffset:    15,
-			FaultDisputeGameCreatedAtSlotOffset: 24,
-			StatusDefenderWin:                   2,
-		},
+		LatestHeight:           misbehaviour.TrustedHeight,
+		L1Config:               l1Config,
+		FaultDisputeGameConfig: config.ToFaultDisputeGameConfig(),
 	}
 
 	consState := types.ConsensusState{
