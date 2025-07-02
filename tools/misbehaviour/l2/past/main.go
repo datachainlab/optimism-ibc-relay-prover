@@ -101,7 +101,7 @@ func run(ctx context.Context) error {
 		ResolvedL2Number:                resolvedL2.Uint64(),
 		ResolvedOutputRoot:              resolvedOutputRoot[:],
 		L2HeaderHistory:                 faultyL2History,
-		FaultDisputeGameFactoryProof:    resolvedFaultDisputeGame,
+		FaultDisputeGameProof:           resolvedFaultDisputeGame,
 	}
 	clientMessage, err := types2.PackClientMessage(&misbehaviour)
 	if err != nil {
@@ -159,7 +159,7 @@ func run(ctx context.Context) error {
 		ResolvedL2Number:                resolvedL2.Uint64(),
 		ResolvedOutputRoot:              resolvedOutputRoot[:],
 		L2HeaderHistory:                 honestL2History,
-		FaultDisputeGameFactoryProof:    resolvedFaultDisputeGame,
+		FaultDisputeGameProof:           resolvedFaultDisputeGame,
 	}
 	clientMessage, err = types2.PackClientMessage(&misbehaviour)
 	if err != nil {

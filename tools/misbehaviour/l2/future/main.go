@@ -115,12 +115,12 @@ func run(ctx context.Context) error {
 			RevisionNumber: 0,
 			RevisionHeight: resolvedL2.Uint64() - 1,
 		},
-		LatestL1Header:               l1Header,
-		ResolvedL2Number:             resolvedL2.Uint64(),
-		ResolvedOutputRoot:           resolvedOutputRoot[:],
-		FaultDisputeGameFactoryProof: resolvedFaultDisputeGame,
-		SubmittedL1Proof:             sealedFaultDisputeGame,
-		L1HeaderHistory:              l1History,
+		LatestL1Header:        l1Header,
+		ResolvedL2Number:      resolvedL2.Uint64(),
+		ResolvedOutputRoot:    resolvedOutputRoot[:],
+		FaultDisputeGameProof: resolvedFaultDisputeGame,
+		SubmittedL1Proof:      sealedFaultDisputeGame,
+		L1HeaderHistory:       l1History,
 	}
 	clientMessage, err := types2.PackClientMessage(&misbehaviour)
 	if err != nil {

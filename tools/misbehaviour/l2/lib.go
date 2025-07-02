@@ -128,7 +128,7 @@ func CreateGameProof(
 	config *Config,
 	l1Header *types.ExecutionUpdate,
 	gameResult bindings.IDisputeGameFactoryGameSearchResult,
-) (*big.Int, *types.FaultDisputeGameFactoryProof, [32]byte, *bindings2.FaultDisputeGameCaller, error) {
+) (*big.Int, *types.FaultDisputeGameProof, [32]byte, *bindings2.FaultDisputeGameCaller, error) {
 	gameId := gameResult.Metadata
 	l2BlockNum := big.NewInt(0).SetBytes(gameResult.ExtraData)
 	rootClaim := gameResult.RootClaim
@@ -183,19 +183,19 @@ func CreateGameProof(
 		return nil, nil, rootClaim, nil, errors.WithStack(err)
 	}
 
-	disputeGameFactoryProof := types.FaultDisputeGameFactoryProof{
+	disputeGameFactoryProof := types.FaultDisputeGameProof{
 		StateRoot: l1Header.StateRoot,
 		DisputeGameFactoryAccount: &types.AccountUpdate{
 			AccountProof:       disputeGameFactoryAccountProof.AccountProofRLP,
 			AccountStorageRoot: disputeGameFactoryAccountProof.StorageHash[:],
 		},
-		DisputeGameFactoryStorageProof: disputeGameFactoryAccountProof.StorageProofRLP[0],
+		DisputeGameFactoryGameIdProof: disputeGameFactoryAccountProof.StorageProofRLP[0],
 		FaultDisputeGameAccount: &types.AccountUpdate{
 			AccountProof:       faultDisputeGameProof.AccountProofRLP,
 			AccountStorageRoot: faultDisputeGameProof.StorageHash[:],
 		},
-		FaultDisputeGameStorageProof:   faultDisputeGameProof.StorageProofRLP[0],
-		FaultDisputeGameSourceGameType: gameType,
+		FaultDisputeGameGameStatusProof: faultDisputeGameProof.StorageProofRLP[0],
+		FaultDisputeGameSourceGameType:  gameType,
 	}
 
 	return l2BlockNum, &disputeGameFactoryProof, rootClaim, faultDisputeGameCaller, nil
