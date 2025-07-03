@@ -93,9 +93,10 @@ func (ts *ProverTestSuite) SetupTest() {
 	l1BeaconEndpoint := fmt.Sprintf("http://localhost:%d", hostPort.L1BeaconPort)
 	preimageMakerEndpoint := "http://localhost:10080"
 	opNodeTimeout := 300 * time.Second
+	preimageMakerTimeout := 300 * time.Second
 	logger := log.GetLogger().WithChain(l2Chain.ChainID()).WithModule(ModuleName)
 	l1Client, _ := l1.NewL1Client(context.Background(), l1BeaconEndpoint, l1ExecutionEndpoint, logger)
-	l2Client := l2.NewL2Client(l2Chain, l1ExecutionEndpoint, opNodeTimeout, preimageMakerEndpoint, opNodeEndpoint, logger)
+	l2Client := l2.NewL2Client(l2Chain, l1ExecutionEndpoint, opNodeTimeout, preimageMakerTimeout, preimageMakerEndpoint, opNodeEndpoint, logger)
 	ts.prover = NewProver(l2Chain, l1Client, l2Client, trustingPeriod, refreshThresholdRate, maxClockDrift, 4, 40, common.Address{}, logger)
 }
 

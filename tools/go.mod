@@ -7,7 +7,7 @@ toolchain go1.23.10
 require (
 	github.com/cockroachdb/errors v1.11.3
 	github.com/cosmos/ibc-go/v8 v8.2.1
-	github.com/datachainlab/ethereum-ibc-relay-chain v0.3.17
+	github.com/datachainlab/ethereum-ibc-relay-chain v0.3.18
 	github.com/datachainlab/optimism-ibc-relay-prover v0.0.0-00010101000000-000000000000
 	github.com/ethereum-optimism/optimism v1.13.1
 	github.com/ethereum/go-ethereum v1.15.3
@@ -186,6 +186,7 @@ require (
 	go.etcd.io/bbolt v1.3.8 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/contrib/bridges/otelslog v0.10.0 // indirect
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.59.0 // indirect
 	go.opentelemetry.io/otel v1.35.0 // indirect
 	go.opentelemetry.io/otel/exporters/jaeger v1.17.0 // indirect
 	go.opentelemetry.io/otel/log v0.11.0 // indirect
