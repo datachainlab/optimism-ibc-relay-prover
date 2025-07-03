@@ -16,7 +16,7 @@ import (
 )
 
 func main() {
-	_ = log.InitLogger("debug", "text", "stdout")
+	_ = log.InitLogger("debug", "text", "stdout", false)
 	ctx := context.Background()
 	if err := run(ctx); err != nil {
 		fmt.Printf("Error: %+v\n", err)
