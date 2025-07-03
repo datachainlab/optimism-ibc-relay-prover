@@ -13,10 +13,11 @@ message ProverConfig {
   string op_node_endpoint = 4;
   string l1_execution_endpoint = 5;
   string l1_beacon_endpoint = 6;
-  string op_node_timeout = 7;
-  google.protobuf.Duration preimage_maker_timeout = 8 [(gogoproto.nullable) = false, (gogoproto.stdduration) = true];
-  map<string, uint64> minimal_fork_sched = 9;
-  uint64 max_l2nums_for_preimage = 10;
-  uint64 max_header_concurrency = 11;
-  string dispute_game_factory_address = 12;
+  string preimage_maker_endpoint = 7;
+  google.protobuf.Duration op_node_timeout = 8 [(gogoproto.nullable) = false, (gogoproto.stdduration) = true];
+  google.protobuf.Duration preimage_maker_timeout = 9 [(gogoproto.nullable) = false, (gogoproto.stdduration) = true];
+  map<string, uint64> minimal_fork_sched = 10;
+  uint64 max_l2nums_for_preimage = 11;
+  uint64 max_header_concurrency = 12;
+  string dispute_game_factory_address = 13;
 }

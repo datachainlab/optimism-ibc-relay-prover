@@ -35,6 +35,7 @@ type L2Client struct {
 	*ethereum.Chain
 	l1ExecutionClient     *ethclient.Client
 	opNodeTimeout         time.Duration
+	preimageMakerTimeout  time.Duration
 	preimageMakerEndpoint string
 	opNodeEndpoint        string
 	logger                *log.RelayLogger
@@ -43,6 +44,7 @@ type L2Client struct {
 func NewL2Client(chain *ethereum.Chain,
 	l1ExecutionEndpoint string,
 	opNodeTimeout time.Duration,
+	preimageMakerTimeout time.Duration,
 	preimageMakerEndpoint string,
 	opNodeEndpoint string,
 	logger *log.RelayLogger,
@@ -55,6 +57,7 @@ func NewL2Client(chain *ethereum.Chain,
 		Chain:                 chain,
 		l1ExecutionClient:     l1ExecutionClient,
 		opNodeTimeout:         opNodeTimeout,
+		preimageMakerTimeout:  preimageMakerTimeout,
 		preimageMakerEndpoint: preimageMakerEndpoint,
 		opNodeEndpoint:        opNodeEndpoint,
 		logger:                logger,
@@ -73,7 +76,7 @@ type PreimageRequest struct {
 // It marshals the derivations into JSON, sends a POST request to the preimage maker endpoint, and reads the response.
 func (c *L2Client) CreatePreimages(ctx context.Context, request *PreimageRequest) ([]byte, error) {
 	httpClient := http.Client{
-		Timeout: c.opNodeTimeout,
+		Timeout: c.preimageMakerTimeout,
 	}
 
 	body, err := json.Marshal(request)
