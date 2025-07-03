@@ -64,7 +64,7 @@ func (c *L2Client) call(ctx context.Context, method string, params []interface{}
 	}
 
 	httpClient := http.Client{
-		Timeout: c.preimageMakerTimeout,
+		Timeout: c.opNodeTimeout,
 	}
 	httpRequest, err := http.NewRequestWithContext(ctx, "POST", c.opNodeEndpoint, bytes.NewBuffer(body))
 	if err != nil {
@@ -75,6 +75,7 @@ func (c *L2Client) call(ctx context.Context, method string, params []interface{}
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to call op-node: method=%s", method)
 	}
+	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		return nil, errors.Errorf("failed to get sync status: %d", response.StatusCode)
 	}

@@ -9,14 +9,13 @@ import (
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l1"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/types"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/hyperledger-labs/yui-relayer/log"
 	"os"
 	"time"
 )
 
 func main() {
-	_ = log.InitLogger("debug", "text", "stdout")
+	_ = log.InitLogger("debug", "text", "stdout", false)
 	ctx := context.Background()
 	if err := run(ctx); err != nil {
 		fmt.Printf("Error: %v\n", err)
@@ -27,11 +26,6 @@ type HostPort struct {
 	L1BeaconPort int `json:"l1BeaconPort"`
 	L1GethPort   int `json:"l1GethPort"`
 	L2GethPort   int `json:"l2GethPort"`
-}
-
-type Config struct {
-	ProverL1Client *l1.L1Client
-	L1Client       *ethclient.Client
 }
 
 func run(ctx context.Context) error {

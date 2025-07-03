@@ -16,6 +16,10 @@ func RegisterInterfaces(registry codectypes.InterfaceRegistry) {
 		&config.ProverConfig{},
 	)
 	registry.RegisterImplementations(
+		(*exported.ClientMessage)(nil),
+		&types.Header{},
+	)
+	registry.RegisterImplementations(
 		(*exported.ClientState)(nil),
 		&types.ClientState{},
 	)

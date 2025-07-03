@@ -17,7 +17,7 @@ import (
 )
 
 func main() {
-	_ = log.InitLogger("debug", "text", "stdout")
+	_ = log.InitLogger("debug", "text", "stdout", false)
 	ctx := context.Background()
 	if err := run(ctx); err != nil {
 		fmt.Printf("Error: %v\n", err)
@@ -35,11 +35,17 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return errors.WithStack(err)
 	}
-	start := gameCount.Int64() - 5
+	start := gameCount.Int64() - 2
+	if start < 0 {
+		return errors.Errorf("Insufficient games start=%d", start)
+	}
 	gameType := uint32(1) // Permission Cannon in local net
 	results, err := config.DisputeGameFactoryCaller.FindLatestGames(nil, gameType, big.NewInt(start), big.NewInt(1))
 	if err != nil {
 		return errors.WithStack(err)
+	}
+	if len(results) == 0 {
+		return errors.Errorf("no game found for gameType=%d, start=%d", gameType, start)
 	}
 
 	// Get finalized L1

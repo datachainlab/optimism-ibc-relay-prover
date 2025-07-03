@@ -35,17 +35,20 @@ func run(ctx context.Context) error {
 		return errors.WithStack(err)
 	}
 	start := gameCount.Int64() - 1
+	if start < 0 {
+		return errors.Errorf("Insufficient games start=%d", start)
+	}
 	gameType := uint32(1) // Permission Cannon in local netk
 	results, err := config.DisputeGameFactoryCaller.FindLatestGames(nil, gameType, big.NewInt(start), big.NewInt(1))
 	if err != nil {
 		return errors.WithStack(err)
 	}
+	if len(results) == 0 {
+		return errors.Errorf("no game found for gameType=%d, start=%d", gameType, start)
+	}
 
 	// Get finalized L1
 	l1Header, err := config.ProverL1Client.GetLatestFinalizedL1Header(ctx)
-	if err != nil {
-		return errors.WithStack(err)
-	}
 	if err != nil {
 		return errors.WithStack(err)
 	}

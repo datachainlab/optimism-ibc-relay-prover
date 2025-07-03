@@ -37,7 +37,6 @@ type Prover struct {
 	codec  codec.ProtoCodecMarshaler
 }
 
-var _ core.StateProver = (*Prover)(nil)
 var _ core.Prover = (*Prover)(nil)
 
 func (pr *Prover) GetLogger() *log.RelayLogger {

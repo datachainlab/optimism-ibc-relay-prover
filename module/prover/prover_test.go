@@ -13,7 +13,6 @@ import (
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l1"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l2"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/types"
-	types2 "github.com/datachainlab/optimism-ibc-relay-prover/module/types"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/hyperledger-labs/yui-relayer/config"
@@ -43,7 +42,7 @@ func TestProverTestSuite(t *testing.T) {
 }
 
 func (ts *ProverTestSuite) SetupTest() {
-	err := log.InitLogger("DEBUG", "text", "stdout")
+	err := log.InitLogger("DEBUG", "text", "stdout", false)
 	ts.Require().NoError(err)
 
 	addressHex, err := os.ReadFile("../../tests/contracts/addresses/OwnableIBCHandler")
@@ -93,10 +92,10 @@ func (ts *ProverTestSuite) SetupTest() {
 	l1ExecutionEndpoint := fmt.Sprintf("http://localhost:%d", hostPort.L1GethPort)
 	l1BeaconEndpoint := fmt.Sprintf("http://localhost:%d", hostPort.L1BeaconPort)
 	preimageMakerEndpoint := "http://localhost:10080"
-	preimageMakerTimeout := 300 * time.Second
+	opNodeTimeout := 300 * time.Second
 	logger := log.GetLogger().WithChain(l2Chain.ChainID()).WithModule(ModuleName)
 	l1Client, _ := l1.NewL1Client(context.Background(), l1BeaconEndpoint, l1ExecutionEndpoint, logger)
-	l2Client := l2.NewL2Client(l2Chain, l1ExecutionEndpoint, preimageMakerTimeout, preimageMakerEndpoint, opNodeEndpoint, logger)
+	l2Client := l2.NewL2Client(l2Chain, l1ExecutionEndpoint, opNodeTimeout, preimageMakerEndpoint, opNodeEndpoint, logger)
 	ts.prover = NewProver(l2Chain, l1Client, l2Client, trustingPeriod, refreshThresholdRate, maxClockDrift, 4, 40, common.Address{}, logger)
 }
 
@@ -104,16 +103,16 @@ func (ts *ProverTestSuite) TestCreateInitialLightClientState() {
 	anyCs, anyConsState, err := ts.prover.CreateInitialLightClientState(context.Background(), nil)
 	ts.Require().NoError(err)
 
-	cs := anyCs.(*types2.ClientState)
+	cs := anyCs.(*types.ClientState)
 	log.GetLogger().Info(fmt.Sprintf("client state: %+v\n", cs))
-	consState := anyConsState.(*types2.ConsensusState)
+	consState := anyConsState.(*types.ConsensusState)
 	log.GetLogger().Info(fmt.Sprintf("consensus state: %+v\n", consState))
 }
 
 func (ts *ProverTestSuite) TestGetLatestFinalizedHeader() {
 	header, err := ts.prover.GetLatestFinalizedHeader(context.Background())
 	ts.Require().NoError(err)
-	h := header.(*types2.Header)
+	h := header.(*types.Header)
 	ts.Require().Len(h.TrustedToDeterministic, 0)
 	ts.Require().Len(h.DeterministicToLatest, 2)
 	ts.Require().True(h.Derivation.L2BlockNumber > 0)
@@ -217,7 +216,7 @@ func (ts *ProverTestSuite) TestCheckRefreshRequired() {
 	// Not refresh because of trusted l1 = latest l1
 	latest, err := ts.prover.l2Client.SyncStatus(ctx)
 	ts.Require().NoError(err)
-	protoClientState, err := codectypes.NewAnyWithValue(exported.ClientState(&types2.ClientState{
+	protoClientState, err := codectypes.NewAnyWithValue(exported.ClientState(&types.ClientState{
 		LatestHeight: util.NewHeight(latest.FinalizedL2.Number),
 	}).(proto.Message))
 	ts.Require().NoError(err)
@@ -228,7 +227,7 @@ func (ts *ProverTestSuite) TestCheckRefreshRequired() {
 	ts.Require().False(required)
 
 	// should refresh by block difference
-	protoClientState, err = codectypes.NewAnyWithValue(exported.ClientState(&types2.ClientState{
+	protoClientState, err = codectypes.NewAnyWithValue(exported.ClientState(&types.ClientState{
 		LatestHeight: util.NewHeight(latest.FinalizedL2.Number - 200),
 	}).(proto.Message))
 	ts.Require().NoError(err)
@@ -246,7 +245,7 @@ func (ts *ProverTestSuite) setupHeadersForUpdate(latestToTrusted uint64) ([]core
 
 	// client state
 	trustedHeight := clienttypes.NewHeight(0, latest.GetHeight().GetRevisionHeight()-latestToTrusted)
-	cs := &types2.ClientState{
+	cs := &types.ClientState{
 		LatestHeight: &trustedHeight,
 	}
 	protoClientState, err := codectypes.NewAnyWithValue(exported.ClientState(cs).(proto.Message))
@@ -272,7 +271,7 @@ func (ts *ProverTestSuite) setupHeadersForUpdate(latestToTrusted uint64) ([]core
 	nextTrusted := trustedHeight.RevisionHeight
 	lastT2D := uint64(0)
 	for i, h := range headers {
-		ih := h.(*types2.Header)
+		ih := h.(*types.Header)
 		ts.Require().True(len(ih.Preimages) > 0)
 		ts.Require().True(len(ih.AccountUpdate.AccountStorageRoot) > 0)
 		ts.Require().True(len(ih.DeterministicToLatest) > 0)

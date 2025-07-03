@@ -1,5 +1,13 @@
 package types
 
+import "github.com/cosmos/ibc-go/v8/modules/core/exported"
+
+var (
+	_ exported.ClientMessage = (*Misbehaviour)(nil)
+	_ exported.ClientMessage = (*FinalizedHeaderMisbehaviour)(nil)
+	_ exported.ClientMessage = (*NextSyncCommitteeMisbehaviour)(nil)
+)
+
 func (m *Misbehaviour) ClientType() string {
 	return ClientType
 }

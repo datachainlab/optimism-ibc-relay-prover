@@ -2,9 +2,6 @@
 
 ![CI](https://github.com/datachainlab/optimism-ibc-relay-prover/workflows/CI/badge.svg?branch=main)
 
-## Supported Versions
-- [ethereum-ibc-relay-prover v0.3.13](https://github.com/datachainlab/ethereum-ibc-relay-prover/releases/tag/v0.3.13)
-
 ## Setup Relayer
 
 Add this module to [yui-relayer](https://github.com/hyperledger-labs/yui-relayer) and activate it.

@@ -1,5 +1,5 @@
 version: v1
-name: buf.build/datachainlab/optimism-ibc-relay-provder
+name: buf.build/datachainlab/optimism-ibc-relay-prover
 deps:
   - buf.build/cosmos/gogo-proto
   - buf.build/cosmos/ibc

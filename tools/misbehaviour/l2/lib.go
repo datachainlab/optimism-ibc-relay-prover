@@ -17,7 +17,6 @@ import (
 	"github.com/hyperledger-labs/yui-relayer/log"
 	"math/big"
 	"os"
-	"time"
 )
 
 type HostPort struct {
@@ -44,7 +43,8 @@ func NewConfig(ctx context.Context) (*Config, error) {
 		return nil, errors.WithStack(err)
 	}
 	// see devnet configuration
-	disputeGameFactoryProxyAddr := common.HexToAddress("0x763ec6446d97cb3fcf6e44fb0ce9273a04007388")
+	disputeGameFactoryProxyAddr := common.HexToAddress(os.Getenv("DISPUTE_GAME_FACTORY_ADDRESS_PROXY"))
+
 	executionNode := fmt.Sprintf("http://localhost:%d", hostPort.L1GethPort)
 	l1Client, err := ethclient.Dial(executionNode)
 	if err != nil {
@@ -170,7 +170,6 @@ func CreateGameProof(
 		return nil, nil, rootClaim, nil, errors.WithStack(err)
 	}
 	fmt.Printf("gameType=%d, timestamp=%d, gameAddress=%s, status=%d\n", gameType, timestamp, gameAddress, status)
-	time.Sleep(10 * time.Second)
 	marshalSlotForStatus, err := common.BigToHash(big.NewInt(0)).MarshalText()
 	if err != nil {
 		return nil, nil, rootClaim, nil, errors.WithStack(err)
