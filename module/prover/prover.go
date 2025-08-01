@@ -213,18 +213,18 @@ func (pr *Prover) CheckRefreshRequired(ctx context.Context, counterparty core.Ch
 	}
 
 	// Get trusted 1 timestamp
-	trustedL1Header, _, err := pr.getDeterministicL1Header(ctx, cs.GetLatestHeight().GetRevisionHeight())
+	l2Output, err := pr.l2Client.OutputAtBlock(ctx, cs.GetLatestHeight().GetRevisionHeight())
 	if err != nil {
-		return false, fmt.Errorf("failed to get trusted l1 header: %v", err)
+		return false, errors.Wrapf(err, "failed to get output at block: l2Number=%d", cs.GetLatestHeight().GetRevisionHeight())
 	}
-	lcLastTimestamp := time.Unix(int64(trustedL1Header.Timestamp), 0)
+	l1HeaderTimestamp, err := pr.l1Client.TimestampAt(ctx, l2Output.BlockRef.DeterministicFinalizedL1())
+	if err != nil {
+		return false, fmt.Errorf("failed to get trusted l1 timestamp: %v", err)
+	}
+	lcLastTimestamp := time.Unix(int64(l1HeaderTimestamp), 0)
 
 	// Get latest l1 timestamp on chain
-	syncStatus, err := pr.l2Client.SyncStatus(ctx)
-	if err != nil {
-		return false, fmt.Errorf("failed to get the latest height of the self chain: %v", err)
-	}
-	latestL1Header, _, err := pr.getDeterministicL1Header(ctx, syncStatus.FinalizedL2.Number)
+	latestL1Header, err := pr.l1Client.GetLatestFinalizedL1Header(ctx)
 	if err != nil {
 		return false, fmt.Errorf("failed to get latest l1 header: %v", err)
 	}
@@ -237,6 +237,8 @@ func (pr *Prover) CheckRefreshRequired(ctx context.Context, counterparty core.Ch
 		return time.Duration(nsec) * time.Nanosecond
 	}
 	needsRefresh := elapsedTime > durationMulByFraction(pr.trustingPeriod, pr.refreshThresholdRate)
+
+	pr.GetLogger().Debug("CheckRefreshRequired", "needsRefresh", needsRefresh, "selfTimestamp", selfTimestamp, "lcLastTimestamp", lcLastTimestamp)
 
 	return needsRefresh, nil
 }
