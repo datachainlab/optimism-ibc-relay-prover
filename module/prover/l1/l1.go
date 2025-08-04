@@ -8,6 +8,7 @@ import (
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l1/beacon"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/types"
 	lctypes "github.com/datachainlab/optimism-ibc-relay-prover/module/types"
+	types2 "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/hyperledger-labs/yui-relayer/log"
 	"math/big"
@@ -46,6 +47,10 @@ func (pr *L1Client) BuildL1Config(state *InitialState, maxClockDrift, trustingPe
 		MaxClockDrift:  maxClockDrift,
 		TrustingPeriod: trustingPeriod,
 	}, nil
+}
+
+func (pr *L1Client) GetLatestETHHeader(ctx context.Context) (*types2.Header, error) {
+	return pr.executionClient.HeaderByNumber(ctx, nil)
 }
 
 func (pr *L1Client) GetLatestFinalizedL1Header(ctx context.Context) (*types.L1Header, error) {

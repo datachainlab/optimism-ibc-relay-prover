@@ -224,11 +224,11 @@ func (pr *Prover) CheckRefreshRequired(ctx context.Context, counterparty core.Ch
 	lcLastTimestamp := time.Unix(int64(l1HeaderTimestamp), 0)
 
 	// Get latest l1 timestamp on chain
-	latestL1Header, err := pr.l1Client.GetLatestFinalizedL1Header(ctx)
+	latestL1Header, err := pr.l1Client.GetLatestETHHeader(ctx)
 	if err != nil {
 		return false, fmt.Errorf("failed to get latest l1 header: %v", err)
 	}
-	selfTimestamp := time.Unix(int64(latestL1Header.Timestamp), 0)
+	selfTimestamp := time.Unix(int64(latestL1Header.Time), 0)
 
 	elapsedTime := selfTimestamp.Sub(lcLastTimestamp)
 
