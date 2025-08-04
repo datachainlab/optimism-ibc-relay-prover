@@ -203,10 +203,10 @@ func (ts *ProverTestSuite) TestCheckRefreshRequired() {
 	ts.Require().NoError(err)
 	trustedTimestamp, err := ts.prover.l1Client.TimestampAt(ctx, syncStatus.FinalizedL2.DeterministicFinalizedL1())
 	ts.Require().NoError(err)
-	latest, err := ts.prover.l1Client.GetLatestFinalizedL1Header(ctx)
+	latest, err := ts.prover.l1Client.GetLatestETHHeader(ctx)
 	ts.Require().NoError(err)
 
-	ts.prover.trustingPeriod = time.Duration(latest.Timestamp-trustedTimestamp) * time.Second
+	ts.prover.trustingPeriod = time.Duration(latest.Time-trustedTimestamp)*time.Second + 7
 	ts.prover.refreshThresholdRate = &types.Fraction{
 		Numerator:   1,
 		Denominator: 1,
