@@ -119,8 +119,18 @@ func (ts *ProverTestSuite) TestGetLatestFinalizedHeader() {
 	ts.Require().True(h.Derivation.L2BlockNumber > 0)
 }
 
-func (ts *ProverTestSuite) TestSetupHeadersForUpdateShort() {
-	headers, trustedHeight := ts.setupHeadersForUpdate(1)
+func (ts *ProverTestSuite) TestSetupHeadersForUpdate() {
+	// Only single headers to construct plural L1 headers
+	save := ts.prover.maxL2NumsForPreimage
+	defer func() {
+		ts.prover.maxL2NumsForPreimage = save
+	}()
+	ts.prover.maxL2NumsForPreimage = 1000
+
+	// Change this value to get desired number of TrustedToDeterministic and DeterministicToLatest
+	const latestToTrusted = 1
+
+	headers, trustedHeight := ts.setupHeadersForUpdate(latestToTrusted)
 	cs, consState, err := ts.prover.CreateInitialLightClientState(context.Background(), trustedHeight)
 	ts.Require().NoError(err)
 	rawUpdateClient, err := clienttypes.PackClientMessage(headers[0])
@@ -140,17 +150,40 @@ func (ts *ProverTestSuite) TestSetupHeadersForUpdateShort() {
 	ts.Require().NoError(err)
 	println("l1Config", common.Bytes2Hex(l1Config))
 
-	trustedL1, err := headers[0].(*types.Header).TrustedToDeterministic[0].Marshal()
+	header := headers[0].(*types.Header)
+	ts.Require().Len(header.TrustedToDeterministic, 1)
+
+	trustedL1, err := header.TrustedToDeterministic[0].Marshal()
 	println("rawL1Header", common.Bytes2Hex(trustedL1))
 
 	println("trusted_timestamp", rawConsState.L1Timestamp)
 	println("trusted_slot", int64(rawConsState.L1Slot))
 	println("trusted_current_sync_committee", common.Bytes2Hex(rawConsState.L1CurrentSyncCommittee))
 
-	ts.Require().NoError(os.WriteFile("update_client_header.bin", encodedUpdateClient, 0644))
 	println("cs", common.Bytes2Hex(encodedCs))
 	println("consState", common.Bytes2Hex(encodedConsState))
 	println("now", time.Now().Unix())
+
+	td := len(header.TrustedToDeterministic) > 1 && header.TrustedToDeterministic[0].ExecutionUpdate.BlockNumber != header.TrustedToDeterministic[len(header.TrustedToDeterministic)-1].ExecutionUpdate.BlockNumber
+	pl := len(header.DeterministicToLatest) > 1 && header.DeterministicToLatest[0].ExecutionUpdate.BlockNumber != header.DeterministicToLatest[len(header.DeterministicToLatest)-1].ExecutionUpdate.BlockNumber
+
+	for i, t2d := range header.TrustedToDeterministic {
+		println("t2d", i, t2d.ExecutionUpdate.BlockNumber)
+	}
+	for i, d2t := range header.DeterministicToLatest {
+		println("d2t", i, d2t.ExecutionUpdate.BlockNumber)
+	}
+
+	// Change file name according to the number of TrustedToDeterministic and DeterministicToLatest
+	tdPart := "t"
+	if td {
+		tdPart = "td"
+	}
+	plPart := "l"
+	if pl {
+		plPart = "pl"
+	}
+	ts.Require().NoError(os.WriteFile(fmt.Sprintf("update_client_header_%s_%s.bin", tdPart, plPart), encodedUpdateClient, 0644))
 }
 
 func (ts *ProverTestSuite) TestSetupHeadersForUpdateLong() {
