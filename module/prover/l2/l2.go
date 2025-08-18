@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"github.com/cockroachdb/errors"
 	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/relay/ethereum"
 	lctypes "github.com/datachainlab/optimism-ibc-relay-prover/module/types"
+	"github.com/datachainlab/optimism-ibc-relay-prover/module/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -15,6 +17,7 @@ import (
 	"io"
 	"math/big"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -36,7 +39,7 @@ type L2Client struct {
 	l1ExecutionClient     *ethclient.Client
 	opNodeTimeout         time.Duration
 	preimageMakerTimeout  time.Duration
-	preimageMakerEndpoint string
+	preimageMakerEndpoint *util.Selector[string]
 	opNodeEndpoint        string
 	logger                *log.RelayLogger
 }
@@ -58,7 +61,7 @@ func NewL2Client(chain *ethereum.Chain,
 		l1ExecutionClient:     l1ExecutionClient,
 		opNodeTimeout:         opNodeTimeout,
 		preimageMakerTimeout:  preimageMakerTimeout,
-		preimageMakerEndpoint: preimageMakerEndpoint,
+		preimageMakerEndpoint: util.NewSelector(strings.Split(preimageMakerEndpoint, ",")),
 		opNodeEndpoint:        opNodeEndpoint,
 		logger:                logger,
 	}
@@ -85,7 +88,7 @@ func (c *L2Client) CreatePreimages(ctx context.Context, request *PreimageRequest
 	}
 	buffer := bytes.NewBuffer(body)
 
-	httpRequest, err := http.NewRequestWithContext(ctx, "POST", c.preimageMakerEndpoint+"/derivation", buffer)
+	httpRequest, err := http.NewRequestWithContext(ctx, "POST", fmt.Sprintf("%s/derivation", c.preimageMakerEndpoint.Get()), buffer)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to call preimage request")
 	}
