@@ -375,13 +375,11 @@ func (ts *ProverTestSuite) TestMakeHeaderChan() {
 
 type mockChain struct {
 	*ethereum.Chain
-	mockLatestHeader core.Header
-	mockClientState  *clienttypes.QueryClientStateResponse
-	mockConsState    *clienttypes.QueryConsensusStateResponse
+	mockClientState *clienttypes.QueryClientStateResponse
 }
 
 func (m *mockChain) GetLatestFinalizedHeader(ctx context.Context) (latestFinalizedHeader core.Header, err error) {
-	return m.mockLatestHeader, nil
+	return nil, nil
 }
 
 func (m *mockChain) QueryClientState(ctx core.QueryContext) (*clienttypes.QueryClientStateResponse, error) {
@@ -389,5 +387,5 @@ func (m *mockChain) QueryClientState(ctx core.QueryContext) (*clienttypes.QueryC
 }
 
 func (m *mockChain) QueryClientConsensusState(ctx core.QueryContext, dstClientConsHeight exported.Height) (*clienttypes.QueryConsensusStateResponse, error) {
-	return m.mockConsState, nil
+	return nil, nil
 }

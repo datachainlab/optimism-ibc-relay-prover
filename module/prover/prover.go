@@ -407,7 +407,7 @@ func (pr *Prover) splitHeaders(ctx context.Context, trustedL1BlockNumber uint64,
 			"deterministic_l1_slot", chunk[i].DeterministicL1.ConsensusUpdate.FinalizedHeader.Slot,
 		)
 		nextTrustedL2 = claimingOutput
-		nextTrustedL1 = deterministicL1.ExecutionUpdate.BlockNumber
+		nextTrustedL1 = claimingOutput.BlockRef.DeterministicFinalizedL1()
 	}
 	return chunk, nil
 }
