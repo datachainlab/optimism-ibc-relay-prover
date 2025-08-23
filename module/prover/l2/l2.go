@@ -121,12 +121,12 @@ func (c *L2Client) BuildAccountUpdate(ctx context.Context, blockNumber uint64) (
 		ctx,
 		c.Chain.Config().IBCAddress(),
 		nil,
-		big.NewInt(int64(blockNumber)),
+		new(big.Int).SetUint64(blockNumber),
 	)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to get account proof: number=%d", blockNumber)
 	}
-	c.logger.Info("buildAccountUpdate: get proof", "block_number", blockNumber, "ibc_address", c.Chain.Config().IBCAddress().String(), "account_proof", hex.EncodeToString(proof.AccountProofRLP), "storage_hash", hex.EncodeToString(proof.StorageHash[:]))
+	c.logger.InfoContext(ctx, "buildAccountUpdate: get proof", "block_number", blockNumber, "ibc_address", c.Chain.Config().IBCAddress().String(), "account_proof", hex.EncodeToString(proof.AccountProofRLP), "storage_hash", hex.EncodeToString(proof.StorageHash[:]))
 	return &lctypes.AccountUpdate{
 		AccountProof:       proof.AccountProofRLP,
 		AccountStorageRoot: proof.StorageHash[:],

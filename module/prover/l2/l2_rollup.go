@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"github.com/cockroachdb/errors"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/hyperledger-labs/yui-relayer/log"
 	"io"
 	"net/http"
 )
@@ -20,8 +19,7 @@ func (c *L2Client) SyncStatus(ctx context.Context) (*SyncStatus, error) {
 	if err = json.Unmarshal(data, &syncStatus); err != nil {
 		return nil, errors.Wrap(err, "failed to unmarshal syncStatus")
 	}
-	logger := log.GetLogger()
-	logger.Info("SyncStatus", "finalizedL2", syncStatus.FinalizedL2.Number)
+	c.logger.InfoContext(ctx, "SyncStatus", "finalizedL2", syncStatus.FinalizedL2.Number)
 	return &syncStatus, nil
 }
 
