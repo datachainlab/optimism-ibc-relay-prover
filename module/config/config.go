@@ -2,14 +2,15 @@ package config
 
 import (
 	"context"
-	"go.opentelemetry.io/otel"
-
+	"fmt"
 	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/relay/ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/hyperledger-labs/yui-relayer/core"
 	"github.com/hyperledger-labs/yui-relayer/coreutil"
 	"github.com/hyperledger-labs/yui-relayer/log"
 	"github.com/hyperledger-labs/yui-relayer/otelcore"
+	"go.opentelemetry.io/otel"
+	"time"
 
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l1"
@@ -47,5 +48,38 @@ func (c *ProverConfig) Build(chain core.Chain) (core.Prover, error) {
 }
 
 func (c *ProverConfig) Validate() error {
+	if c.L1BeaconEndpoint == "" {
+		return fmt.Errorf("L1BeaconEndpoint is required")
+	}
+	if c.L1ExecutionEndpoint == "" {
+		return fmt.Errorf("L1ExecutionEndpoint is required")
+	}
+	if c.OpNodeEndpoint == "" {
+		return fmt.Errorf("OpNodeEndpoint is required")
+	}
+	if c.OpNodeTimeout <= time.Duration(0) {
+		return fmt.Errorf("OpNodeTimeout must be greater than 0")
+	}
+	if c.TrustingPeriod <= time.Duration(0) {
+		return fmt.Errorf("TrustingPeriod must be greater than 0")
+	}
+	if c.PreimageMakerTimeout <= time.Duration(0) {
+		return fmt.Errorf("PreimageMakerTimeout must be greater than 0")
+	}
+	if c.DisputeGameFactoryAddress == "" {
+		return fmt.Errorf("DisputeGameFactoryAddress is required")
+	}
+	if c.RefreshThresholdRate == nil {
+		return fmt.Errorf("config attribute \"refresh_threshold_rate\" is required")
+	}
+	if c.RefreshThresholdRate.Denominator == 0 {
+		return fmt.Errorf("config attribute \"refresh_threshold_rate.denominator\" must not be zero")
+	}
+	if c.RefreshThresholdRate.Numerator == 0 {
+		return fmt.Errorf("config attribute \"refresh_threshold_rate.numerator\" must not be zero")
+	}
+	if c.RefreshThresholdRate.Numerator > c.RefreshThresholdRate.Denominator {
+		return fmt.Errorf("config attribute \"refresh_threshold_rate\" must be less than or equal to 1.0: actual=%v/%v", c.RefreshThresholdRate.Numerator, c.RefreshThresholdRate.Denominator)
+	}
 	return nil
 }
