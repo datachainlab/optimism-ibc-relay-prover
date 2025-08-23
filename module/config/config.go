@@ -2,12 +2,14 @@ package config
 
 import (
 	"context"
+	"go.opentelemetry.io/otel"
 
 	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/relay/ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/hyperledger-labs/yui-relayer/core"
 	"github.com/hyperledger-labs/yui-relayer/coreutil"
 	"github.com/hyperledger-labs/yui-relayer/log"
+	"github.com/hyperledger-labs/yui-relayer/otelcore"
 
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l1"
@@ -36,10 +38,12 @@ func (c *ProverConfig) Build(chain core.Chain) (core.Prover, error) {
 		c.OpNodeEndpoint,
 		logger,
 	)
-	return prover.NewProver(l2Chain, l1Client, l2Client,
+	inner := prover.NewProver(l2Chain, l1Client, l2Client,
 		c.TrustingPeriod, c.RefreshThresholdRate, c.MaxClockDrift, c.MaxHeaderConcurrency, c.MaxL2NumsForPreimage,
 		common.HexToAddress(c.DisputeGameFactoryAddress),
-		logger), nil
+		logger)
+	tracer := otel.Tracer("github.com/datachainlab/optimism-ibc-relay-prover/module")
+	return otelcore.NewProver(inner, l2Chain.ChainID(), tracer), nil
 }
 
 func (c *ProverConfig) Validate() error {

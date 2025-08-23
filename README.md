@@ -10,18 +10,18 @@ Add this module to [yui-relayer](https://github.com/hyperledger-labs/yui-relayer
 package main
 
 import (
-	"log"
-	"github.com/hyperledger-labs/yui-relayer/cmd"
-	optimism "github.com/datachainlab/optimism-ibc-relay-prover/module"
+    "log"
+    "github.com/hyperledger-labs/yui-relayer/cmd"
+    optimism "github.com/datachainlab/optimism-ibc-relay-prover/module"
 )
 
 func main() {
-	if err := cmd.Execute(
-		// counterparty.Module{}, //counter party
-		optimism.Module{}, // Optimism Prover Module 
+    if err := cmd.Execute( 
+        // counterparty.Module{}, //counter party
+        optimism.Module{}, // Optimism Prover Module 
     ); err != nil {
-		log.Fatal(err)
-	}
+        log.Fatal(err)
+    }
 }
 ```
 
