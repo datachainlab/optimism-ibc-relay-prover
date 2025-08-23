@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/hyperledger-labs/yui-relayer/core"
 	"github.com/hyperledger-labs/yui-relayer/log"
+	"sync/atomic"
 	"time"
 )
 
@@ -415,7 +416,7 @@ func (pr *Prover) makeHeaderChan(ctx context.Context, requests []*HeaderChunk, f
 	out := make(chan *core.HeaderOrError)
 	sem := make(chan struct{}, pr.maxHeaderConcurrency)
 	done := make(chan struct{}, len(requests))
-	buffer := make([]*core.HeaderOrError, len(requests))
+	buffer := make([]atomic.Pointer[core.HeaderOrError], len(requests))
 
 	// worker
 	go func() {
@@ -425,10 +426,10 @@ func (pr *Prover) makeHeaderChan(ctx context.Context, requests []*HeaderChunk, f
 			go func(index int, chunk *HeaderChunk) {
 				defer func() { done <- struct{}{} }()
 				ret, err := fn(ctx, chunk)
-				buffer[index] = &core.HeaderOrError{
+				buffer[index].Store(&core.HeaderOrError{
 					Header: ret,
 					Error:  err,
-				}
+				})
 			}(i, chunk)
 		}
 	}()
@@ -439,8 +440,11 @@ func (pr *Prover) makeHeaderChan(ctx context.Context, requests []*HeaderChunk, f
 		sequence := 0
 		for sequence < len(requests) {
 			<-done
-			for sequence < len(requests) && buffer[sequence] != nil {
-				result := buffer[sequence]
+			for sequence < len(requests) {
+				result := buffer[sequence].Load()
+				if result == nil {
+					break
+				}
 
 				// log
 				if result.Header != nil {
@@ -454,7 +458,7 @@ func (pr *Prover) makeHeaderChan(ctx context.Context, requests []*HeaderChunk, f
 				// Always deliver in order from zero.
 				out <- result
 				// Reset buffer to avoid large memory usage.
-				buffer[sequence] = nil
+				buffer[sequence].Swap(nil)
 				sequence++
 				// Allow next worker to start only when the collect sequence is delivered.
 				// If it is released on the worker side, the number of tasks will significantly exceed the number of concurrent executions when lcp-go takes a long time.
