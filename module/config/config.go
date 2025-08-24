@@ -26,7 +26,7 @@ func (c *ProverConfig) Build(chain core.Chain) (core.Prover, error) {
 	}
 
 	logger := log.GetLogger().WithChain(l2Chain.ChainID()).WithModule(prover.ModuleName)
-	l1Client, err := l1.NewL1Client(context.Background(), c.L1BeaconEndpoint, c.L1ExecutionEndpoint, logger)
+	l1Client, err := l1.NewL1Client(context.Background(), c.L1BeaconEndpoint, c.L1ExecutionEndpoint, c.MinimalForkSched, logger)
 	if err != nil {
 		return nil, err
 	}

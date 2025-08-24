@@ -75,7 +75,7 @@ func (pr *Prover) GetLatestFinalizedHeader(ctx context.Context) (latestFinalized
 		if finalizedL1Header.ExecutionUpdate.BlockNumber >= syncStatus.FinalizedL1.Number {
 			break
 		}
-		pr.GetLogger().Debug("seek next finalized l1", "syncStatus", syncStatus.FinalizedL1.Number, "finalized", finalizedL1Header.ExecutionUpdate.BlockNumber)
+		pr.GetLogger().DebugContext(ctx, "seek next finalized l1", "syncStatus", syncStatus.FinalizedL1.Number, "finalized", finalizedL1Header.ExecutionUpdate.BlockNumber)
 		time.Sleep(SyncWaitTTL)
 	}
 
@@ -94,14 +94,14 @@ func (pr *Prover) GetLatestFinalizedHeader(ctx context.Context) (latestFinalized
 		if finalizedL2Number == 0 {
 			return nil, fmt.Errorf("no finalized L2 block")
 		}
-		pr.GetLogger().Debug("seek next finalized l2", "candidate", finalizedL2Number)
+		pr.GetLogger().DebugContext(ctx, "seek next finalized l2", "candidate", finalizedL2Number)
 		finalizedL2Number--
 	}
 
-	pr.GetLogger().Debug("deterministicL1Header", "number", deterministicL1Header.ExecutionUpdate.BlockNumber,
+	pr.GetLogger().DebugContext(ctx, "deterministicL1Header", "number", deterministicL1Header.ExecutionUpdate.BlockNumber,
 		"finalized-slot", deterministicL1Header.ConsensusUpdate.FinalizedHeader.Slot,
 		"signature-slot", deterministicL1Header.ConsensusUpdate.SignatureSlot)
-	pr.GetLogger().Debug("finalizedL1Header", "number", finalizedL1Header.ExecutionUpdate.BlockNumber,
+	pr.GetLogger().DebugContext(ctx, "finalizedL1Header", "number", finalizedL1Header.ExecutionUpdate.BlockNumber,
 		"finalized-slot", finalizedL1Header.ConsensusUpdate.FinalizedHeader.Slot,
 		"signature-slot", finalizedL1Header.ConsensusUpdate.SignatureSlot)
 
@@ -132,15 +132,15 @@ func (pr *Prover) SetupHeadersForUpdate(ctx context.Context, counterparty core.F
 	}
 	trustedHeight := clienttypes.NewHeight(cs.GetLatestHeight().GetRevisionNumber(), cs.GetLatestHeight().GetRevisionHeight())
 
-	pr.GetLogger().Info("Setup Headers For Update", "trustedHeight", trustedHeight.GetRevisionHeight(), "latest", latest.Derivation.L2BlockNumber)
+	pr.GetLogger().InfoContext(ctx, "Setup Headers For Update", "trustedHeight", trustedHeight.GetRevisionHeight(), "latest", latest.Derivation.L2BlockNumber)
 
 	// No need to update
 	if trustedHeight.GetRevisionHeight() == latest.Derivation.L2BlockNumber {
-		pr.GetLogger().Info("latest is trusted", "l2", latest.Derivation.L2BlockNumber)
+		pr.GetLogger().InfoContext(ctx, "latest is trusted", "l2", latest.Derivation.L2BlockNumber)
 		return core.MakeHeaderStream(), nil
 	}
 	if trustedHeight.GetRevisionHeight() > latest.Derivation.L2BlockNumber {
-		pr.GetLogger().Info("past l2 header", "trustedL2", trustedHeight.GetRevisionHeight(), "targetL2", latest.Derivation.L2BlockNumber)
+		pr.GetLogger().InfoContext(ctx, "past l2 header", "trustedL2", trustedHeight.GetRevisionHeight(), "targetL2", latest.Derivation.L2BlockNumber)
 		return core.MakeHeaderStream(), nil
 	}
 
@@ -178,7 +178,7 @@ func (pr *Prover) SetupHeadersForUpdate(ctx context.Context, counterparty core.F
 			return nil, errors.Wrapf(err, "failed to get sync committiees from trusted to latest: deterministic=%d, latest=%d", chunk.DeterministicL1.ExecutionUpdate.BlockNumber, latestL1.ExecutionUpdate.BlockNumber)
 		}
 
-		pr.GetLogger().Info("start preimageRequest", "l2", chunk.ClaimingOutput.BlockRef.Number)
+		pr.GetLogger().InfoContext(ctx, "start preimageRequest", "l2", chunk.ClaimingOutput.BlockRef.Number)
 		preimage, err := pr.l2Client.CreatePreimages(ctx, &l2.PreimageRequest{
 			L1HeadHash:         common.BytesToHash(latestL1.ExecutionUpdate.BlockHash),
 			AgreedL2HeadHash:   chunk.TrustedOutput.BlockRef.Hash,
@@ -189,7 +189,7 @@ func (pr *Prover) SetupHeadersForUpdate(ctx context.Context, counterparty core.F
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to make preimage")
 		}
-		pr.GetLogger().Info("success preimageRequest", "l2", chunk.ClaimingOutput.BlockRef.Number, "preimageSize", len(preimage))
+		pr.GetLogger().InfoContext(ctx, "success preimageRequest", "l2", chunk.ClaimingOutput.BlockRef.Number, "preimageSize", len(preimage))
 		ih.Preimages = preimage
 
 		return ih, nil
@@ -239,7 +239,7 @@ func (pr *Prover) CheckRefreshRequired(ctx context.Context, counterparty core.Ch
 	}
 	needsRefresh := elapsedTime > durationMulByFraction(pr.trustingPeriod, pr.refreshThresholdRate)
 
-	pr.GetLogger().Debug("CheckRefreshRequired", "needsRefresh", needsRefresh, "selfTimestamp", selfTimestamp, "lcLastTimestamp", lcLastTimestamp)
+	pr.GetLogger().DebugContext(ctx, "CheckRefreshRequired", "needsRefresh", needsRefresh, "selfTimestamp", selfTimestamp, "lcLastTimestamp", lcLastTimestamp)
 
 	return needsRefresh, nil
 }
@@ -305,7 +305,7 @@ func (pr *Prover) CreateInitialLightClientState(ctx context.Context, height expo
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "failed to build account update for initial state: number=%d", l2Number)
 	}
-	pr.GetLogger().Info("CreateInitialLightClientState", "l1", l1Number, "l2", l2Number, "slot", l1InitialState.Slot, "period", l1InitialState.Period, "storageRoot", common.Bytes2Hex(accountUpdate.AccountStorageRoot))
+	pr.GetLogger().InfoContext(ctx, "CreateInitialLightClientState", "l1", l1Number, "l2", l2Number, "slot", l1InitialState.Slot, "period", l1InitialState.Period, "storageRoot", common.Bytes2Hex(accountUpdate.AccountStorageRoot))
 	clientState := &types.ClientState{
 		ChainId:            chainID.Uint64(),
 		IbcStoreAddress:    pr.l2Client.Config().IBCAddress().Bytes(),
@@ -377,7 +377,7 @@ type HeaderChunk struct {
 
 func (pr *Prover) splitHeaders(ctx context.Context, trustedL1BlockNumber uint64, trustedL2 *l2.OutputResponse, latestHeader *types.Header) ([]*HeaderChunk, error) {
 	l2Numbers := make([]uint64, 0)
-	pr.GetLogger().Info("split headers", "trustedL2", trustedL2.BlockRef.Number, "latestL2Header", latestHeader.Derivation.L2BlockNumber)
+	pr.GetLogger().InfoContext(ctx, "split headers", "trustedL2", trustedL2.BlockRef.Number, "latestL2Header", latestHeader.Derivation.L2BlockNumber)
 
 	for start := trustedL2.BlockRef.Number + pr.maxL2NumsForPreimage; start < latestHeader.Derivation.L2BlockNumber; start += pr.maxL2NumsForPreimage {
 		l2Numbers = append(l2Numbers, start)
@@ -399,7 +399,7 @@ func (pr *Prover) splitHeaders(ctx context.Context, trustedL1BlockNumber uint64,
 			DeterministicL1: deterministicL1,
 			ClaimingOutput:  claimingOutput,
 		}
-		pr.GetLogger().Info("header chunk",
+		pr.GetLogger().InfoContext(ctx, "header chunk",
 			"l2", chunk[i].ClaimingOutput.BlockRef.Number,
 			"trusted_l2", chunk[i].TrustedOutput.BlockRef.Number,
 			"trusted_l1_num", chunk[i].TrustedL1Number,
@@ -450,9 +450,9 @@ func (pr *Prover) makeHeaderChan(ctx context.Context, requests []*HeaderChunk, f
 				if result.Header != nil {
 					ih := result.Header.(*types.Header)
 					args := append([]interface{}{"sequence", sequence}, ih.ToLog()...)
-					pr.GetLogger().Info("deliver header success", args...)
+					pr.GetLogger().InfoContext(ctx, "deliver header success", args...)
 				} else {
-					pr.GetLogger().Debug("deliver header error", "sequence", sequence, "err", result.Error)
+					pr.GetLogger().DebugContext(ctx, "deliver header error", "sequence", sequence, "err", result.Error)
 				}
 
 				// Always deliver in order from zero.
