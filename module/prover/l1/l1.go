@@ -8,10 +8,10 @@ import (
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l1/beacon"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/types"
 	lctypes "github.com/datachainlab/optimism-ibc-relay-prover/module/types"
+	"github.com/datachainlab/optimism-ibc-relay-prover/module/util"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/hyperledger-labs/yui-relayer/log"
-	"math/big"
 	"time"
 )
 
@@ -192,7 +192,7 @@ func (pr *L1Client) GetSyncCommitteesFromTrustedToLatest(ctx context.Context, tr
 }
 
 func (pr *L1Client) TimestampAt(ctx context.Context, number uint64) (uint64, error) {
-	header, err := pr.executionClient.HeaderByNumber(ctx, big.NewInt(0).SetUint64(number))
+	header, err := pr.executionClient.HeaderByNumber(ctx, util.NewBigInt(number))
 	if err != nil {
 		return 0, errors.WithStack(err)
 	}

@@ -109,7 +109,7 @@ func (c *L2Client) CreatePreimages(ctx context.Context, request *PreimageRequest
 }
 
 func (c *L2Client) TimestampAt(ctx context.Context, number uint64) (uint64, error) {
-	header, err := c.Chain.Client().HeaderByNumber(ctx, big.NewInt(0).SetUint64(number))
+	header, err := c.Chain.Client().HeaderByNumber(ctx, util.NewBigInt(number))
 	if err != nil {
 		return 0, errors.Wrapf(err, "failed to get block from number: number=%d", number)
 	}
@@ -121,7 +121,7 @@ func (c *L2Client) BuildAccountUpdate(ctx context.Context, blockNumber uint64) (
 		ctx,
 		c.Chain.Config().IBCAddress(),
 		nil,
-		new(big.Int).SetUint64(blockNumber),
+		util.NewBigInt(blockNumber),
 	)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to get account proof: number=%d", blockNumber)

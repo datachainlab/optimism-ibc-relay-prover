@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l1/beacon"
 	lctypes "github.com/datachainlab/optimism-ibc-relay-prover/module/types"
-	"math/big"
+	"github.com/datachainlab/optimism-ibc-relay-prover/module/util"
 )
 
 const (
@@ -85,7 +85,7 @@ func (pr *L1Client) getSlotAtTimestamp(ctx context.Context, timestamp uint64) (u
 
 // returns a period corresponding to a given execution block number
 func (pr *L1Client) getPeriodWithBlockNumber(ctx context.Context, blockNumber uint64) (uint64, error) {
-	header, err := pr.executionClient.HeaderByNumber(ctx, big.NewInt(0).SetUint64(blockNumber))
+	header, err := pr.executionClient.HeaderByNumber(ctx, util.NewBigInt(blockNumber))
 	if err != nil {
 		return 0, err
 	}
