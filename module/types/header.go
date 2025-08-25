@@ -5,7 +5,10 @@ import (
 	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
 	"github.com/cosmos/ibc-go/v8/modules/core/exported"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/util"
+	"github.com/hyperledger-labs/yui-relayer/core"
 )
+
+var _ core.Header = (*Header)(nil)
 
 func (*Header) ClientType() string {
 	return ClientType
