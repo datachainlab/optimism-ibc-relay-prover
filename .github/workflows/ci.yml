@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  test:
+    name: test
+    timeout-minutes: 120
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - uses: extractions/setup-just@v2
+        with:
+          just-version: 1.40.0
+      - name: Clean up unnecessary docker volumes
+        run: |
+          docker system prune -a --volumes -f
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+      - name: Install kurtosis
+        run: |
+          sudo apt-get install jq
+          echo "deb [trusted=yes] https://apt.fury.io/kurtosis-tech/ /" | sudo tee /etc/apt/sources.list.d/kurtosis.list
+          sudo apt update
+          sudo apt remove kurtosis-cli
+          sudo apt install kurtosis-cli=1.8.1 -V
+      - name: Download optimism-preimage-maker
+        run: |
+          git clone https://github.com/datachainlab/optimism-preimage-maker
+      - name: Start optimism dev net
+        run: |
+          cd optimism-preimage-maker
+          make chain
+          make devnet-up
+          make set-port
+      - name: Start preimage server
+        run: |
+          cd optimism-preimage-maker
+          make server-up &
+          make wait
+      - name: Clean up cache
+        run: |
+          sudo rm -rf $HOME/.cargo/registry
+          sudo rm -rf $HOME/.cache
+      - name: Test
+        run: |
+          make set-port
+          make contracts
+          sleep 180
+          go test ./...
+        env:
+          PREIMAGE_MAKER: ./
+
