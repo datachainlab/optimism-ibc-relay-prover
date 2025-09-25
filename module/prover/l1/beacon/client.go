@@ -12,7 +12,7 @@ import (
 	"github.com/hyperledger-labs/yui-relayer/log"
 )
 
-var SupportedVersions = []string{"deneb", "electra"}
+var SupportedVersions = []string{"deneb", "electra", "fulu"}
 
 type Client struct {
 	endpoint string
