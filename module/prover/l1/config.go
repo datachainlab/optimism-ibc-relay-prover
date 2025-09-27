@@ -28,6 +28,7 @@ const (
 	Capella   = "capella"
 	Deneb     = "deneb"
 	Electra   = "electra"
+	Fulu      = "fulu"
 )
 
 var (
@@ -61,6 +62,7 @@ var (
 		ExecutionPayloadStateRootGindex:   DenebSpec.ExecutionPayloadStateRootGindex,
 		ExecutionPayloadBlockNumberGindex: DenebSpec.ExecutionPayloadBlockNumberGindex,
 	}
+	FuluSpec = ElectraSpec
 )
 
 // NOTE the prover supports only the mainnet and minimal preset for now
@@ -107,6 +109,7 @@ func (prc *ProverConfig) getForkParameters() *lctypes.ForkParameters {
 					Spec:    &ElectraSpec,
 				},
 			},
+			//TODO
 		}
 	case Minimal:
 		// https://github.com/ethpandaops/ethereum-package/blob/8f8830fd1992db4e5678c125bc400e310d5b6006/src/package_io/constants.star#L110
@@ -137,6 +140,11 @@ func (prc *ProverConfig) getForkParameters() *lctypes.ForkParameters {
 					Version: common.Hex2Bytes("60000038"),
 					Epoch:   prc.MinimalForkSched[Electra],
 					Spec:    &ElectraSpec,
+				},
+				{
+					Version: common.Hex2Bytes("70000038"),
+					Epoch:   prc.MinimalForkSched[Fulu],
+					Spec:    &FuluSpec,
 				},
 			},
 		}
@@ -169,6 +177,7 @@ func (prc *ProverConfig) getForkParameters() *lctypes.ForkParameters {
 					Epoch:   222464,
 					Spec:    &ElectraSpec,
 				},
+				//TODO
 			},
 		}
 	default:
