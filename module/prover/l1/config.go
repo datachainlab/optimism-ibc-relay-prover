@@ -149,6 +149,7 @@ func (prc *ProverConfig) getForkParameters() *lctypes.ForkParameters {
 			},
 		}
 	case Sepolia:
+		// https://github.com/ChainSafe/lodestar/tree/unstable/packages/config/src/chainConfig/networks
 		return &lctypes.ForkParameters{
 			GenesisForkVersion: []byte{144, 0, 0, 105},
 			Forks: []*lctypes.Fork{
@@ -177,7 +178,11 @@ func (prc *ProverConfig) getForkParameters() *lctypes.ForkParameters {
 					Epoch:   222464,
 					Spec:    &ElectraSpec,
 				},
-				//TODO
+				{
+					Version: []byte{144, 0, 0, 117},
+					Epoch:   272640,
+					Spec:    &FuluSpec,
+				},
 			},
 		}
 	default:
