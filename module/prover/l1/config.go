@@ -108,8 +108,12 @@ func (prc *ProverConfig) getForkParameters() *lctypes.ForkParameters {
 					Epoch:   364032,
 					Spec:    &ElectraSpec,
 				},
+				{
+					Version: []byte{6, 0, 0, 0},
+					Epoch:   411392,
+					Spec:    &FuluSpec,
+				},
 			},
-			//TODO
 		}
 	case Minimal:
 		// https://github.com/ethpandaops/ethereum-package/blob/8f8830fd1992db4e5678c125bc400e310d5b6006/src/package_io/constants.star#L110
