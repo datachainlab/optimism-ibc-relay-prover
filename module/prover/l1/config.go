@@ -143,12 +143,12 @@ func (prc *ProverConfig) getForkParameters() *lctypes.ForkParameters {
 				},
 				{
 					Version: common.Hex2Bytes("60000038"),
-					Epoch:   prc.MinimalForkSched[Electra],
+					Epoch:   0,
 					Spec:    &ElectraSpec,
 				},
 				{
 					Version: common.Hex2Bytes("70000038"),
-					Epoch:   prc.MinimalForkSched[Fulu],
+					Epoch:   50,
 					Spec:    &FuluSpec,
 				},
 			},
