@@ -28,6 +28,7 @@ const (
 	Capella   = "capella"
 	Deneb     = "deneb"
 	Electra   = "electra"
+	Fulu      = "fulu"
 )
 
 var (
@@ -61,6 +62,7 @@ var (
 		ExecutionPayloadStateRootGindex:   DenebSpec.ExecutionPayloadStateRootGindex,
 		ExecutionPayloadBlockNumberGindex: DenebSpec.ExecutionPayloadBlockNumberGindex,
 	}
+	FuluSpec = ElectraSpec
 )
 
 // NOTE the prover supports only the mainnet and minimal preset for now
@@ -106,6 +108,11 @@ func (prc *ProverConfig) getForkParameters() *lctypes.ForkParameters {
 					Epoch:   364032,
 					Spec:    &ElectraSpec,
 				},
+				{
+					Version: []byte{6, 0, 0, 0},
+					Epoch:   411392,
+					Spec:    &FuluSpec,
+				},
 			},
 		}
 	case Minimal:
@@ -138,9 +145,15 @@ func (prc *ProverConfig) getForkParameters() *lctypes.ForkParameters {
 					Epoch:   prc.MinimalForkSched[Electra],
 					Spec:    &ElectraSpec,
 				},
+				{
+					Version: common.Hex2Bytes("70000038"),
+					Epoch:   prc.MinimalForkSched[Fulu],
+					Spec:    &FuluSpec,
+				},
 			},
 		}
 	case Sepolia:
+		// https://github.com/ChainSafe/lodestar/tree/unstable/packages/config/src/chainConfig/networks
 		return &lctypes.ForkParameters{
 			GenesisForkVersion: []byte{144, 0, 0, 105},
 			Forks: []*lctypes.Fork{
@@ -168,6 +181,11 @@ func (prc *ProverConfig) getForkParameters() *lctypes.ForkParameters {
 					Version: []byte{144, 0, 0, 116},
 					Epoch:   222464,
 					Spec:    &ElectraSpec,
+				},
+				{
+					Version: []byte{144, 0, 0, 117},
+					Epoch:   272640,
+					Spec:    &FuluSpec,
 				},
 			},
 		}
