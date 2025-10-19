@@ -35,6 +35,7 @@ jobs:
       - name: Download optimism-preimage-maker
         run: |
           git clone https://github.com/datachainlab/optimism-preimage-maker
+          cd optimism-preimage-maker
           git checkout 28e3b40071881112c739620d298585535a253318
       - name: Start optimism dev net
         run: |
