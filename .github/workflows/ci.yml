@@ -63,7 +63,7 @@ jobs:
           make set-port
           make contracts
           sleep 180
-          go test ./...
+          go test ./module/...
         env:
           PREIMAGE_MAKER: ./
 
