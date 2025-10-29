@@ -2,7 +2,6 @@ package l2
 
 import (
 	"context"
-	"encoding/json"
 	"github.com/cockroachdb/errors"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -13,12 +12,6 @@ func (c *L2Client) SyncStatus(ctx context.Context) (*SyncStatus, error) {
 	var resp SyncStatus
 	err := c.call(ctx, "optimism_syncStatus", &resp)
 	return &resp, err
-}
-
-func (c *L2Client) RollupConfigBytes(ctx context.Context) ([]byte, error) {
-	var resp json.RawMessage
-	err := c.call(ctx, "optimism_rollupConfig", &resp)
-	return resp, err
 }
 
 func (c *L2Client) OutputAtBlock(ctx context.Context, blockNumber uint64) (*OutputResponse, error) {

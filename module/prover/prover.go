@@ -277,10 +277,6 @@ func (pr *Prover) CreateInitialLightClientState(ctx context.Context, height expo
 	}
 
 	// L2
-	rollupConfig, err := pr.l2Client.RollupConfigBytes(ctx)
-	if err != nil {
-		return nil, nil, errors.Wrap(err, "failed to get roll up config")
-	}
 	chainID, err := pr.l2Client.Client().ChainID(ctx)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "failed to get chain id from l2")
@@ -312,7 +308,6 @@ func (pr *Prover) CreateInitialLightClientState(ctx context.Context, height expo
 		IbcCommitmentsSlot: l2.IBCCommitmentsSlot[:],
 		LatestHeight:       util.NewHeight(l2Number),
 		Frozen:             false,
-		RollupConfigJson:   rollupConfig,
 		L1Config:           l1Config,
 		FaultDisputeGameConfig: &types.FaultDisputeGameConfig{
 			DisputeGameFactoryAddress: pr.disputeGameFactoryAddress.Bytes(),
