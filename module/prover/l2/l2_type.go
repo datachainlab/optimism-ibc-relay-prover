@@ -1,9 +1,10 @@
 package l2
 
 import (
+	"reflect"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"reflect"
 )
 
 // https://github.com/ethereum-optimism/optimism/blob/v1.13.1/op-service/eth/sync_status.go
@@ -84,4 +85,10 @@ type Bytes32 [32]byte
 
 func (b *Bytes32) UnmarshalJSON(text []byte) error {
 	return hexutil.UnmarshalFixedJSON(reflect.TypeOf(b), text, b[:])
+}
+
+type PreimageMetadata struct {
+	Agreed  uint64      `json:"agreed"`
+	Claimed uint64      `json:"claimed"`
+	L1Head  common.Hash `json:"l1head"`
 }

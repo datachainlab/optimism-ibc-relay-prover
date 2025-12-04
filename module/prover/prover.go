@@ -3,6 +3,9 @@ package prover
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
+	"time"
+
 	"github.com/cockroachdb/errors"
 	"github.com/cosmos/cosmos-sdk/codec"
 	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
@@ -15,8 +18,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/hyperledger-labs/yui-relayer/core"
 	"github.com/hyperledger-labs/yui-relayer/log"
-	"sync/atomic"
-	"time"
 )
 
 const ModuleName = "optimism-light-client"
@@ -61,52 +62,33 @@ func (pr *Prover) ProveHostConsensusState(ctx core.QueryContext, height exported
 }
 
 func (pr *Prover) GetLatestFinalizedHeader(ctx context.Context) (latestFinalizedHeader core.Header, err error) {
-	syncStatus, err := pr.l2Client.SyncStatus(ctx)
+	// Get latest derived preimage metadata.
+	preimageMetadata, err := pr.l2Client.GetLatestPreimageMetadata(ctx)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to call syncStatus")
+		return nil, errors.Wrap(err, "failed to call GetLatestPreimageMetadata")
 	}
-	// Wait for finalizedL1 to exceed syncStatus
-	var finalizedL1Header *types.L1Header
-	for {
-		finalizedL1Header, err = pr.l1Client.GetLatestFinalizedL1Header(ctx)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to get latest L1 finalized header")
-		}
-		if finalizedL1Header.ExecutionUpdate.BlockNumber >= syncStatus.FinalizedL1.Number {
-			break
-		}
-		pr.GetLogger().DebugContext(ctx, "seek next finalized l1", "syncStatus", syncStatus.FinalizedL1.Number, "finalized", finalizedL1Header.ExecutionUpdate.BlockNumber)
-		time.Sleep(SyncWaitTTL)
+
+	// Find L1 where preimages are created.
+	latestL1Header, err := pr.l1Client.GetFinalizedL1Header(ctx, preimageMetadata.L1Head)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to get finalized L1 header: number=%d", preimageMetadata.L1Head)
 	}
 
 	// Find L2 where L1 is deterministic.
-	var deterministicL1Header *types.L1Header
-	var l2Output *l2.OutputResponse
-	finalizedL2Number := syncStatus.FinalizedL2.Number
-	for {
-		deterministicL1Header, l2Output, err = pr.getDeterministicL1Header(ctx, finalizedL2Number)
-		if err != nil {
-			return nil, errors.Wrapf(err, "failed to get deterministic L1 header: number=%d", finalizedL2Number)
-		}
-		if finalizedL1Header.ExecutionUpdate.BlockNumber >= deterministicL1Header.ExecutionUpdate.BlockNumber {
-			break
-		}
-		if finalizedL2Number == 0 {
-			return nil, fmt.Errorf("no finalized L2 block")
-		}
-		pr.GetLogger().DebugContext(ctx, "seek next finalized l2", "candidate", finalizedL2Number)
-		finalizedL2Number--
+	deterministicL1Header, l2Output, err := pr.getDeterministicL1Header(ctx, preimageMetadata.Claimed)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to get deterministic L1 header: number=%d", preimageMetadata.Claimed)
 	}
 
 	pr.GetLogger().DebugContext(ctx, "deterministicL1Header", "number", deterministicL1Header.ExecutionUpdate.BlockNumber,
 		"finalized-slot", deterministicL1Header.ConsensusUpdate.FinalizedHeader.Slot,
 		"signature-slot", deterministicL1Header.ConsensusUpdate.SignatureSlot)
-	pr.GetLogger().DebugContext(ctx, "finalizedL1Header", "number", finalizedL1Header.ExecutionUpdate.BlockNumber,
-		"finalized-slot", finalizedL1Header.ConsensusUpdate.FinalizedHeader.Slot,
-		"signature-slot", finalizedL1Header.ConsensusUpdate.SignatureSlot)
+	pr.GetLogger().DebugContext(ctx, "latestL1Header", "number", latestL1Header.ExecutionUpdate.BlockNumber,
+		"finalized-slot", latestL1Header.ConsensusUpdate.FinalizedHeader.Slot,
+		"signature-slot", latestL1Header.ConsensusUpdate.SignatureSlot)
 
 	header := &types.Header{
-		DeterministicToLatest: []*types.L1Header{deterministicL1Header, finalizedL1Header},
+		DeterministicToLatest: []*types.L1Header{deterministicL1Header, latestL1Header},
 		Derivation: &types.Derivation{
 			L2OutputRoot:  l2Output.OutputRoot[:],
 			L2BlockNumber: l2Output.BlockRef.Number,
@@ -144,52 +126,41 @@ func (pr *Prover) SetupHeadersForUpdate(ctx context.Context, counterparty core.F
 		return core.MakeHeaderStream(), nil
 	}
 
-	// Collect L1 headers from trusted to deterministic and deterministic to latest by trusted l2
-	trustedOutput, err := pr.l2Client.OutputAtBlock(ctx, trustedHeight.RevisionHeight)
+	// Get preimage metadata from trusted height to latest.
+	preimageMetadataList, err := pr.l2Client.ListPreimageMetadata(ctx, trustedHeight.RevisionHeight, latest.Derivation.L2BlockNumber)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to get output root at block: number=%d", trustedHeight.RevisionHeight)
+		return nil, errors.Wrapf(err, "failed to list preimage metadata : trusted height=%d", trustedHeight.RevisionHeight)
 	}
-	trustedL1BlockNumber := trustedOutput.BlockRef.DeterministicFinalizedL1()
-	latestL1 := latest.DeterministicToLatest[1]
-	headerChunk, err := pr.splitHeaders(ctx, trustedL1BlockNumber, trustedOutput, latest)
+	headerChunk, err := pr.splitHeaders(ctx, preimageMetadataList)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to split headers")
 	}
 
 	return pr.makeHeaderChan(ctx, headerChunk, func(ctx context.Context, chunk *HeaderChunk) (core.Header, error) {
 		ih := &types.Header{
-			TrustedHeight: util.NewHeight(chunk.TrustedOutput.BlockRef.Number),
+			TrustedHeight: util.NewHeight(chunk.AgreedOutput.BlockRef.Number),
 			Derivation: &types.Derivation{
-				AgreedL2OutputRoot: chunk.TrustedOutput.OutputRoot[:],
-				L2OutputRoot:       chunk.ClaimingOutput.OutputRoot[:],
-				L2BlockNumber:      chunk.ClaimingOutput.BlockRef.Number,
+				AgreedL2OutputRoot: chunk.AgreedOutput.OutputRoot[:],
+				L2OutputRoot:       chunk.ClaimedOutput.OutputRoot[:],
+				L2BlockNumber:      chunk.ClaimedOutput.BlockRef.Number,
 			},
 		}
-		ih.AccountUpdate, err = pr.l2Client.BuildAccountUpdate(ctx, chunk.ClaimingOutput.BlockRef.Number)
+		ih.AccountUpdate, err = pr.l2Client.BuildAccountUpdate(ctx, chunk.ClaimedOutput.BlockRef.Number)
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to build account update: number=%d", chunk.ClaimingOutput.BlockRef.Number)
+			return nil, errors.Wrapf(err, "failed to build account update: number=%d", chunk.ClaimedOutput.BlockRef.Number)
 		}
-		ih.TrustedToDeterministic, err = pr.l1Client.GetSyncCommitteesFromTrustedToLatest(ctx, chunk.TrustedL1Number, chunk.DeterministicL1)
+		ih.TrustedToDeterministic, err = pr.l1Client.GetSyncCommitteesFromTrustedToLatest(ctx, chunk.AgreedDeterministicL1, chunk.ClaimedDeterministicL1)
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to get sync committiees from trusted to latest: trusted=%d, deterministic=%d", chunk.TrustedL1Number, chunk.DeterministicL1.ExecutionUpdate.BlockNumber)
+			return nil, errors.Wrapf(err, "failed to get sync committiees from trusted to latest: trusted=%d, deterministic=%d", chunk.AgreedDeterministicL1.ConsensusUpdate.FinalizedHeader.Slot, chunk.ClaimedDeterministicL1.ConsensusUpdate.FinalizedHeader.Slot)
 		}
-		ih.DeterministicToLatest, err = pr.l1Client.GetSyncCommitteesFromTrustedToLatest(ctx, chunk.DeterministicL1.ExecutionUpdate.BlockNumber, latestL1)
+		ih.DeterministicToLatest, err = pr.l1Client.GetSyncCommitteesFromTrustedToLatest(ctx, chunk.ClaimedDeterministicL1, chunk.LatestL1)
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to get sync committiees from trusted to latest: deterministic=%d, latest=%d", chunk.DeterministicL1.ExecutionUpdate.BlockNumber, latestL1.ExecutionUpdate.BlockNumber)
+			return nil, errors.Wrapf(err, "failed to get sync committiees from trusted to latest: deterministic=%d, latest=%d", chunk.ClaimedDeterministicL1.ConsensusUpdate.FinalizedHeader.Slot, chunk.LatestL1.ConsensusUpdate.FinalizedHeader.Slot)
 		}
-
-		pr.GetLogger().InfoContext(ctx, "start preimageRequest", "l2", chunk.ClaimingOutput.BlockRef.Number)
-		preimage, err := pr.l2Client.CreatePreimages(ctx, &l2.PreimageRequest{
-			L1HeadHash:         common.BytesToHash(latestL1.ExecutionUpdate.BlockHash),
-			AgreedL2HeadHash:   chunk.TrustedOutput.BlockRef.Hash,
-			AgreedL2OutputRoot: common.BytesToHash(chunk.TrustedOutput.OutputRoot[:]),
-			L2OutputRoot:       common.BytesToHash(chunk.ClaimingOutput.OutputRoot[:]),
-			L2BlockNumber:      chunk.ClaimingOutput.BlockRef.Number,
-		})
+		preimage, err := pr.l2Client.GetPreimages(ctx, chunk.PreimageMetadata)
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to make preimage")
+			return nil, errors.Wrapf(err, "failed to get preimages: claimed=%d ", chunk.ClaimedOutput.BlockRef.Number)
 		}
-		pr.GetLogger().InfoContext(ctx, "success preimageRequest", "l2", chunk.ClaimingOutput.BlockRef.Number, "preimageSize", len(preimage))
 		ih.Preimages = preimage
 
 		return ih, nil
@@ -364,45 +335,46 @@ func (pr *Prover) getDeterministicL1Header(ctx context.Context, l2Number uint64)
 }
 
 type HeaderChunk struct {
-	TrustedOutput   *l2.OutputResponse
-	TrustedL1Number uint64
-	ClaimingOutput  *l2.OutputResponse
-	DeterministicL1 *types.L1Header
+	AgreedOutput           *l2.OutputResponse
+	AgreedDeterministicL1  *types.L1Header
+	ClaimedOutput          *l2.OutputResponse
+	ClaimedDeterministicL1 *types.L1Header
+	LatestL1               *types.L1Header
+	PreimageMetadata       *l2.PreimageMetadata
 }
 
-func (pr *Prover) splitHeaders(ctx context.Context, trustedL1BlockNumber uint64, trustedL2 *l2.OutputResponse, latestHeader *types.Header) ([]*HeaderChunk, error) {
-	l2Numbers := make([]uint64, 0)
-	pr.GetLogger().InfoContext(ctx, "split headers", "trustedL2", trustedL2.BlockRef.Number, "latestL2Header", latestHeader.Derivation.L2BlockNumber)
+func (pr *Prover) splitHeaders(ctx context.Context, preimageMetadataList []*l2.PreimageMetadata) ([]*HeaderChunk, error) {
 
-	for start := trustedL2.BlockRef.Number + pr.maxL2NumsForPreimage; start < latestHeader.Derivation.L2BlockNumber; start += pr.maxL2NumsForPreimage {
-		l2Numbers = append(l2Numbers, start)
-	}
-	l2Numbers = append(l2Numbers, latestHeader.Derivation.L2BlockNumber)
-
-	nextTrustedL2 := trustedL2
-	nextTrustedL1 := trustedL1BlockNumber
-
-	chunk := make([]*HeaderChunk, len(l2Numbers))
-	for i, l2Number := range l2Numbers {
-		deterministicL1, claimingOutput, err := pr.getDeterministicL1Header(ctx, l2Number)
+	chunk := make([]*HeaderChunk, len(preimageMetadataList))
+	for i, metadata := range preimageMetadataList {
+		trustedL1, agreedOutput, err := pr.getDeterministicL1Header(ctx, metadata.Agreed)
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to get determinisitic l1 header: l2Number=%d", l2Number)
+			return nil, errors.Wrapf(err, "failed to get determinisitic l1 header: l2Number=%d", metadata.Claimed)
 		}
+		deterministicL1, claimingOutput, err := pr.getDeterministicL1Header(ctx, metadata.Claimed)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to get determinisitic l1 header: l2Number=%d", metadata.Claimed)
+		}
+		latestL1, err := pr.l1Client.GetFinalizedL1Header(ctx, metadata.L1Head)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to get latest l1 header: l1Number=%d", metadata.L1Head)
+		}
+
 		chunk[i] = &HeaderChunk{
-			TrustedOutput:   nextTrustedL2,
-			TrustedL1Number: nextTrustedL1,
-			DeterministicL1: deterministicL1,
-			ClaimingOutput:  claimingOutput,
+			AgreedOutput:           agreedOutput,
+			AgreedDeterministicL1:  trustedL1,
+			ClaimedOutput:          claimingOutput,
+			ClaimedDeterministicL1: deterministicL1,
+			LatestL1:               latestL1,
+			PreimageMetadata:       metadata,
 		}
 		pr.GetLogger().InfoContext(ctx, "header chunk",
-			"l2", chunk[i].ClaimingOutput.BlockRef.Number,
-			"trusted_l2", chunk[i].TrustedOutput.BlockRef.Number,
-			"trusted_l1_num", chunk[i].TrustedL1Number,
-			"deterministic_l1_num", chunk[i].DeterministicL1.ExecutionUpdate.BlockNumber,
-			"deterministic_l1_slot", chunk[i].DeterministicL1.ConsensusUpdate.FinalizedHeader.Slot,
+			"agreed_l2", chunk[i].AgreedOutput.BlockRef.Number,
+			"agreed_deterministic_l1_slot", chunk[i].AgreedDeterministicL1.ConsensusUpdate.FinalizedHeader.Slot,
+			"claimed_l2", chunk[i].ClaimedOutput.BlockRef.Number,
+			"claimed_deterministic_l1_slot", chunk[i].ClaimedDeterministicL1.ConsensusUpdate.FinalizedHeader.Slot,
+			"latest_l1_slot", chunk[i].LatestL1.ConsensusUpdate.FinalizedHeader.Slot,
 		)
-		nextTrustedL2 = claimingOutput
-		nextTrustedL1 = claimingOutput.BlockRef.DeterministicFinalizedL1()
 	}
 	return chunk, nil
 }

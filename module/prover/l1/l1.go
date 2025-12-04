@@ -3,16 +3,19 @@ package l1
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"time"
+
 	"github.com/cockroachdb/errors"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l1/beacon"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/types"
 	lctypes "github.com/datachainlab/optimism-ibc-relay-prover/module/types"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/util"
+	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/hyperledger-labs/yui-relayer/log"
-	"time"
 )
 
 type InitialState struct {
@@ -25,10 +28,12 @@ type InitialState struct {
 }
 
 type L1Client struct {
-	beaconClient    beacon.Client
-	executionClient *ethclient.Client
-	config          *ProverConfig
-	logger          *log.RelayLogger
+	beaconClient            beacon.Client
+	executionClient         *ethclient.Client
+	preimageMakerHttpClient *util.HTTPClient
+	preimageMakerEndpoint   *util.Selector[string]
+	config                  *ProverConfig
+	logger                  *log.RelayLogger
 }
 
 func (pr *L1Client) BuildL1Config(state *InitialState, maxClockDrift, trustingPeriod time.Duration) (*types.L1Config, error) {
@@ -53,11 +58,22 @@ func (pr *L1Client) GetLatestETHHeader(ctx context.Context) (*ethtypes.Header, e
 	return pr.executionClient.HeaderByNumber(ctx, nil)
 }
 
-func (pr *L1Client) GetLatestFinalizedL1Header(ctx context.Context) (*types.L1Header, error) {
-	res, err := pr.beaconClient.GetLightClientFinalityUpdate(ctx)
+func (pr *L1Client) GetFinalizedL1Header(ctx context.Context, l1HeadHash common.Hash) (*types.L1Header, error) {
+
+	// Get finalized L1 header from optimism-preimage-maker
+	type Request struct {
+		L1HeadHash common.Hash `json:"l1_head_hash"`
+	}
+	request := &Request{L1HeadHash: l1HeadHash}
+	rawResponse, err := pr.preimageMakerHttpClient.POST(ctx, fmt.Sprintf("%s/get_finalized_l1", pr.preimageMakerEndpoint.Get()), request)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
+	var res beacon.LightClientFinalityUpdateResponse
+	if err = json.Unmarshal(rawResponse, &res); err != nil {
+		return nil, errors.Wrapf(err, "failed to unmarshal")
+	}
+
 	lcUpdate := res.Data.ToProto()
 	executionHeader := &res.Data.FinalizedHeader.Execution
 	executionUpdate, err := pr.buildExecutionUpdate(executionHeader)
@@ -129,16 +145,8 @@ func (pr *L1Client) GetConsensusHeaderByBlockNumber(ctx context.Context, blockNu
 	return res, err
 }
 
-func (pr *L1Client) GetSyncCommitteesFromTrustedToLatest(ctx context.Context, trustedBlockNumber uint64, lfh *types.L1Header) ([]*types.L1Header, error) {
-	timestamp, err := pr.TimestampAt(ctx, trustedBlockNumber)
-	if err != nil {
-		return nil, err
-	}
-	slot, err := pr.getSlotAtTimestamp(ctx, timestamp)
-	if err != nil {
-		return nil, err
-	}
-	statePeriod := pr.computeSyncCommitteePeriod(pr.computeEpoch(slot))
+func (pr *L1Client) GetSyncCommitteesFromTrustedToLatest(ctx context.Context, trusted *types.L1Header, lfh *types.L1Header) ([]*types.L1Header, error) {
+	statePeriod := pr.computeSyncCommitteePeriod(pr.computeEpoch(trusted.ConsensusUpdate.SignatureSlot))
 	latestPeriod := pr.computeSyncCommitteePeriod(pr.computeEpoch(lfh.ConsensusUpdate.SignatureSlot))
 	pr.logger.DebugContext(ctx, "GetSyncCommitteesFromTrustedToLatest", "statePeriod", statePeriod, "latestPeriod", latestPeriod)
 	res, err := pr.beaconClient.GetLightClientUpdate(ctx, statePeriod)
@@ -251,7 +259,10 @@ func (pr *L1Client) BuildNextSyncCommitteeUpdate(ctx context.Context, period uin
 	}, nil
 }
 
-func NewL1Client(ctx context.Context, l1BeaconEndpoint, l1ExecutionEndpoint string, minimalForkSched map[string]uint64, logger *log.RelayLogger) (*L1Client, error) {
+func NewL1Client(ctx context.Context, l1BeaconEndpoint, l1ExecutionEndpoint string,
+	preimageMakerTimeout time.Duration,
+	preimageMakerEndpoint *util.Selector[string],
+	minimalForkSched map[string]uint64, logger *log.RelayLogger) (*L1Client, error) {
 	beaconClient := beacon.NewClient(l1BeaconEndpoint)
 	executionClient, err := ethclient.DialContext(ctx, l1ExecutionEndpoint)
 	if err != nil {
@@ -270,8 +281,10 @@ func NewL1Client(ctx context.Context, l1BeaconEndpoint, l1ExecutionEndpoint stri
 	}
 
 	return &L1Client{
-		beaconClient:    beaconClient,
-		executionClient: executionClient,
+		beaconClient:            beaconClient,
+		executionClient:         executionClient,
+		preimageMakerHttpClient: util.NewHTTPClient(preimageMakerTimeout),
+		preimageMakerEndpoint:   preimageMakerEndpoint,
 		config: &ProverConfig{
 			Network:          network,
 			MinimalForkSched: minimalForkSched,
