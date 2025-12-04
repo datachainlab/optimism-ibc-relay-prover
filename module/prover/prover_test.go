@@ -121,15 +121,8 @@ func (ts *ProverTestSuite) TestGetLatestFinalizedHeader() {
 }
 
 func (ts *ProverTestSuite) TestSetupHeadersForUpdate() {
-	// Only single headers to construct plural L1 headers
-	save := ts.prover.maxL2NumsForPreimage
-	defer func() {
-		ts.prover.maxL2NumsForPreimage = save
-	}()
-	ts.prover.maxL2NumsForPreimage = 1000
-
 	// Change this value to get desired number of TrustedToDeterministic and DeterministicToLatest
-	const latestToTrusted = 1
+	const latestToTrusted = 100
 
 	headers, trustedHeight := ts.setupHeadersForUpdate(latestToTrusted)
 	cs, consState, err := ts.prover.CreateInitialLightClientState(context.Background(), trustedHeight)

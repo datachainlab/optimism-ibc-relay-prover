@@ -23,7 +23,7 @@ func (c *HTTPClient) POST(ctx context.Context, url string, request interface{}) 
 	httpClient := http.Client{
 		Timeout: c.timeout,
 	}
-	var buffer *bytes.Buffer
+	var buffer io.Reader
 	if request != nil {
 		body, err := json.Marshal(request)
 		if err != nil {

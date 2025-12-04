@@ -68,6 +68,8 @@ func (pr *Prover) GetLatestFinalizedHeader(ctx context.Context) (latestFinalized
 		return nil, errors.Wrap(err, "failed to call GetLatestPreimageMetadata")
 	}
 
+	pr.GetLogger().InfoContext(ctx, "GetLatestFinalizedHeader", "claimed_l2", preimageMetadata.Claimed, "agreed_l2", preimageMetadata.Agreed, "latest_l1", preimageMetadata.L1Head)
+
 	// Find L1 where preimages are created.
 	latestL1Header, err := pr.l1Client.GetFinalizedL1Header(ctx, preimageMetadata.L1Head)
 	if err != nil {

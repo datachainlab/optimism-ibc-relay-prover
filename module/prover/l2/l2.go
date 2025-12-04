@@ -66,7 +66,7 @@ func NewL2Client(chain *ethereum.Chain,
 }
 
 func (c *L2Client) GetLatestPreimageMetadata(ctx context.Context) (*PreimageMetadata, error) {
-	response, err := c.preimageMakerHttpClient.POST(ctx, fmt.Sprintf("%s/get_preimage_metadata", c.preimageMakerEndpoint.Get()), nil)
+	response, err := c.preimageMakerHttpClient.POST(ctx, fmt.Sprintf("%s/get_latest_metadata", c.preimageMakerEndpoint.Get()), nil)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to read preimage data")
 	}
@@ -86,7 +86,7 @@ func (c *L2Client) ListPreimageMetadata(ctx context.Context, trustedHeight uint6
 		LtClaimed: latestHeight + 1,
 		GtClaimed: trustedHeight,
 	}
-	response, err := c.preimageMakerHttpClient.POST(ctx, fmt.Sprintf("%s/list_preimage_metadata", c.preimageMakerEndpoint.Get()), request)
+	response, err := c.preimageMakerHttpClient.POST(ctx, fmt.Sprintf("%s/list_metadata", c.preimageMakerEndpoint.Get()), request)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to read preimage data")
 	}

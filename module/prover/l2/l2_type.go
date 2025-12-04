@@ -90,5 +90,5 @@ func (b *Bytes32) UnmarshalJSON(text []byte) error {
 type PreimageMetadata struct {
 	Agreed  uint64      `json:"agreed"`
 	Claimed uint64      `json:"claimed"`
-	L1Head  common.Hash `json:"l1head"`
+	L1Head  common.Hash `json:"l1_head"`
 }
