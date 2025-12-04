@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/cockroachdb/errors"
@@ -261,7 +262,7 @@ func (pr *L1Client) BuildNextSyncCommitteeUpdate(ctx context.Context, period uin
 
 func NewL1Client(ctx context.Context, l1BeaconEndpoint, l1ExecutionEndpoint string,
 	preimageMakerTimeout time.Duration,
-	preimageMakerEndpoint *util.Selector[string],
+	preimageMakerEndpoint string,
 	minimalForkSched map[string]uint64, logger *log.RelayLogger) (*L1Client, error) {
 	beaconClient := beacon.NewClient(l1BeaconEndpoint)
 	executionClient, err := ethclient.DialContext(ctx, l1ExecutionEndpoint)
@@ -284,7 +285,7 @@ func NewL1Client(ctx context.Context, l1BeaconEndpoint, l1ExecutionEndpoint stri
 		beaconClient:            beaconClient,
 		executionClient:         executionClient,
 		preimageMakerHttpClient: util.NewHTTPClient(preimageMakerTimeout),
-		preimageMakerEndpoint:   preimageMakerEndpoint,
+		preimageMakerEndpoint:   util.NewSelector(strings.Split(preimageMakerEndpoint, ",")),
 		config: &ProverConfig{
 			Network:          network,
 			MinimalForkSched: minimalForkSched,

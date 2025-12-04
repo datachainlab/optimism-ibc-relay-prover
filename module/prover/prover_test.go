@@ -4,6 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/rand"
+	"os"
+	"testing"
+	"time"
+
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	"github.com/cosmos/gogoproto/proto"
 	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
@@ -19,10 +24,6 @@ import (
 	"github.com/hyperledger-labs/yui-relayer/core"
 	"github.com/hyperledger-labs/yui-relayer/log"
 	"github.com/stretchr/testify/suite"
-	"math/rand"
-	"os"
-	"testing"
-	"time"
 )
 
 type HostPort struct {
@@ -95,7 +96,7 @@ func (ts *ProverTestSuite) SetupTest() {
 	opNodeTimeout := 300 * time.Second
 	preimageMakerTimeout := 300 * time.Second
 	logger := log.GetLogger().WithChain(l2Chain.ChainID()).WithModule(ModuleName)
-	l1Client, _ := l1.NewL1Client(context.Background(), l1BeaconEndpoint, l1ExecutionEndpoint, nil, logger)
+	l1Client, _ := l1.NewL1Client(context.Background(), l1BeaconEndpoint, l1ExecutionEndpoint, preimageMakerTimeout, preimageMakerEndpoint, nil, logger)
 	l2Client := l2.NewL2Client(l2Chain, l1ExecutionEndpoint, opNodeTimeout, preimageMakerTimeout, preimageMakerEndpoint, opNodeEndpoint, logger)
 	ts.prover = NewProver(l2Chain, l1Client, l2Client, trustingPeriod, refreshThresholdRate, maxClockDrift, 4, 40, common.Address{}, logger)
 }
@@ -343,7 +344,7 @@ func (ts *ProverTestSuite) TestMakeHeaderChan() {
 	headerChunks := make([]*HeaderChunk, 99)
 	for i := 0; i < len(headerChunks); i++ {
 		headerChunks[i] = &HeaderChunk{
-			ClaimingOutput: &l2.OutputResponse{
+			ClaimedOutput: &l2.OutputResponse{
 				BlockRef: l2.L2BlockRef{
 					Number: uint64(i + 1),
 				},
@@ -353,10 +354,10 @@ func (ts *ProverTestSuite) TestMakeHeaderChan() {
 
 	ret := ts.prover.makeHeaderChan(context.Background(), headerChunks, func(ctx context.Context, header *HeaderChunk) (core.Header, error) {
 		time.Sleep(time.Duration(max(1, rand.Int31n(3))) * time.Second)
-		println("run header", header.ClaimingOutput.BlockRef.Number)
+		println("run header", header.ClaimedOutput.BlockRef.Number)
 		return &types.Header{
 			Derivation: &types.Derivation{
-				L2BlockNumber: header.ClaimingOutput.BlockRef.Number,
+				L2BlockNumber: header.ClaimedOutput.BlockRef.Number,
 			},
 		}, nil
 	})
