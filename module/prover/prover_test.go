@@ -120,107 +120,15 @@ func (ts *ProverTestSuite) TestGetLatestFinalizedHeader() {
 	ts.Require().True(h.Derivation.L2BlockNumber > 0)
 }
 
-func (ts *ProverTestSuite) TestSetupHeadersForUpdate() {
-	// Change this value to get desired number of TrustedToDeterministic and DeterministicToLatest
-	const latestToTrusted = 100
-
-	headers, trustedHeight := ts.setupHeadersForUpdate(latestToTrusted)
-	cs, consState, err := ts.prover.CreateInitialLightClientState(context.Background(), trustedHeight)
-	ts.Require().NoError(err)
-	rawUpdateClient, err := clienttypes.PackClientMessage(headers[0])
-	ts.Require().NoError(err)
-	encodedUpdateClient, err := rawUpdateClient.Marshal()
-	ts.Require().NoError(err)
-
-	rawCs := cs.(*types.ClientState)
-	encodedCs, err := rawCs.Marshal()
-	ts.Require().NoError(err)
-
-	rawConsState := consState.(*types.ConsensusState)
-	encodedConsState, err := rawConsState.Marshal()
-	ts.Require().NoError(err)
-
-	l1Config, err := rawCs.L1Config.Marshal()
-	ts.Require().NoError(err)
-	println("l1Config", common.Bytes2Hex(l1Config))
-
-	header := headers[0].(*types.Header)
-	ts.Require().Len(header.TrustedToDeterministic, 1)
-
-	trustedL1, err := header.TrustedToDeterministic[0].Marshal()
-	println("rawL1Header", common.Bytes2Hex(trustedL1))
-
-	println("trusted_timestamp", rawConsState.L1Timestamp)
-	println("trusted_slot", int64(rawConsState.L1Slot))
-	println("trusted_current_sync_committee", common.Bytes2Hex(rawConsState.L1CurrentSyncCommittee))
-
-	println("cs", common.Bytes2Hex(encodedCs))
-	println("consState", common.Bytes2Hex(encodedConsState))
-	println("now", time.Now().Unix())
-
-	td := len(header.TrustedToDeterministic) > 1 && header.TrustedToDeterministic[0].ExecutionUpdate.BlockNumber != header.TrustedToDeterministic[len(header.TrustedToDeterministic)-1].ExecutionUpdate.BlockNumber
-	pl := len(header.DeterministicToLatest) > 1 && header.DeterministicToLatest[0].ExecutionUpdate.BlockNumber != header.DeterministicToLatest[len(header.DeterministicToLatest)-1].ExecutionUpdate.BlockNumber
-
-	for i, t2d := range header.TrustedToDeterministic {
-		println("t2d", i, t2d.ExecutionUpdate.BlockNumber)
-	}
-	for i, d2t := range header.DeterministicToLatest {
-		println("d2t", i, d2t.ExecutionUpdate.BlockNumber)
-	}
-
-	// Change file name according to the number of TrustedToDeterministic and DeterministicToLatest
-	tdPart := "t"
-	if td {
-		tdPart = "td"
-	}
-	plPart := "l"
-	if pl {
-		plPart = "pl"
-	}
-	ts.Require().NoError(os.WriteFile(fmt.Sprintf("update_client_header_%s_%s.bin", tdPart, plPart), encodedUpdateClient, 0644))
+func (ts *ProverTestSuite) TestSetupHeadersForUpdateMultiRange() {
+	headers, trustedHeight := ts.setupHeadersForUpdate(3)
+	ts.outputForELCUpdateClientTest(headers, trustedHeight)
 }
 
-func (ts *ProverTestSuite) TestSetupHeadersForUpdateLong() {
-	headers, trustedHeight := ts.setupHeadersForUpdate(400)
-	cs, consState, err := ts.prover.CreateInitialLightClientState(context.Background(), trustedHeight)
-	ts.Require().NoError(err)
-	rawCs := cs.(*types.ClientState)
-	rawL1Config, err := rawCs.L1Config.Marshal()
-	println("rawL1Config", common.Bytes2Hex(rawL1Config))
-	ts.Require().NoError(err)
-	rawConsState := consState.(*types.ConsensusState)
-	println("now", time.Now().Unix())
-	l1HeaderKeys := map[uint64]struct{}{}
-	var l1Headers []*types.L1Header
-	for _, header := range headers {
-		h := header.(*types.Header)
-		for _, l1H := range h.TrustedToDeterministic {
-			if _, ok := l1HeaderKeys[l1H.ExecutionUpdate.BlockNumber]; !ok {
-				l1HeaderKeys[l1H.ExecutionUpdate.BlockNumber] = struct{}{}
-				l1Headers = append(l1Headers, l1H)
-			}
-		}
-	}
-	for i, l1H := range l1Headers {
-		rawL1H, err := l1H.Marshal()
-		ts.Require().NoError(err)
-		println("rawL1Header", common.Bytes2Hex(rawL1H))
-		if i == 0 {
-			println("cons_slot", rawConsState.L1Slot)
-			println("cons_l1_current_sync_committee", common.Bytes2Hex(rawConsState.L1CurrentSyncCommittee))
-			println("cons_l1_next_sync_committee", common.Bytes2Hex(rawConsState.L1NextSyncCommittee))
-			println("cons_l1_timestamp", rawConsState.Timestamp)
-		} else {
-			println("cons_slot", l1Headers[i-1].ConsensusUpdate.FinalizedHeader.Slot)
-			if i == 1 {
-				println("cons_l1_current_sync_committee", common.Bytes2Hex(rawConsState.L1NextSyncCommittee))
-			} else {
-				println("cons_l1_current_sync_committee", common.Bytes2Hex(l1Headers[i-2].ConsensusUpdate.NextSyncCommittee.AggregatePubkey))
-			}
-			println("cons_l1_next_sync_committee", common.Bytes2Hex(l1Headers[i-1].ConsensusUpdate.NextSyncCommittee.AggregatePubkey))
-			println("cons_l1_timestamp", l1Headers[i-1].Timestamp)
-		}
-	}
+func (ts *ProverTestSuite) TestSetupHeadersForUpdateLatest() {
+	// trus after changing 'max_preimage_distance' to 400 in optimism-preimage-maker
+	headers, trustedHeight := ts.setupHeadersForUpdate(1)
+	ts.outputForELCL1VerificationTest(headers, trustedHeight)
 }
 
 func (ts *ProverTestSuite) TestCheckRefreshRequired() {
@@ -271,12 +179,17 @@ func (ts *ProverTestSuite) TestCheckRefreshRequired() {
 
 }
 
-func (ts *ProverTestSuite) setupHeadersForUpdate(latestToTrusted uint64) ([]core.Header, clienttypes.Height) {
+func (ts *ProverTestSuite) setupHeadersForUpdate(index int) ([]core.Header, clienttypes.Height) {
 	latest, err := ts.prover.GetLatestFinalizedHeader(context.Background())
 	ts.Require().NoError(err)
 
+	// Make trusted height
+	preimageMetadataList, err := ts.prover.l2Client.ListPreimageMetadata(context.Background(), 1, latest.GetHeight().GetRevisionHeight())
+	ts.Require().NoError(err)
+	lastClaimed := preimageMetadataList[len(preimageMetadataList)-1-index].Claimed
+
 	// client state
-	trustedHeight := clienttypes.NewHeight(0, latest.GetHeight().GetRevisionHeight()-latestToTrusted)
+	trustedHeight := clienttypes.NewHeight(0, lastClaimed)
 	cs := &types.ClientState{
 		LatestHeight: &trustedHeight,
 	}
@@ -329,7 +242,7 @@ func (ts *ProverTestSuite) setupHeadersForUpdate(latestToTrusted uint64) ([]core
 			lastT2D = ih.TrustedToDeterministic[len(ih.TrustedToDeterministic)-1].ExecutionUpdate.BlockNumber
 		}
 	}
-	ts.Require().True(len(headers) > 0)
+	ts.Require().Equal(len(headers), index)
 	return headers, trustedHeight
 }
 
@@ -365,6 +278,105 @@ func (ts *ProverTestSuite) TestMakeHeaderChan() {
 		println("finish", next)
 	}
 	ts.Require().Equal(next, uint64(len(headerChunks)))
+}
+
+// testdata for ELC
+func (ts *ProverTestSuite) outputForELCUpdateClientTest(headers []core.Header, trustedHeight clienttypes.Height) {
+	cs, consState, err := ts.prover.CreateInitialLightClientState(context.Background(), trustedHeight)
+	ts.Require().NoError(err)
+	rawUpdateClient, err := clienttypes.PackClientMessage(headers[0])
+	ts.Require().NoError(err)
+	encodedUpdateClient, err := rawUpdateClient.Marshal()
+	ts.Require().NoError(err)
+
+	rawCs := cs.(*types.ClientState)
+	encodedCs, err := rawCs.Marshal()
+	ts.Require().NoError(err)
+
+	rawConsState := consState.(*types.ConsensusState)
+	encodedConsState, err := rawConsState.Marshal()
+	ts.Require().NoError(err)
+
+	l1Config, err := rawCs.L1Config.Marshal()
+	ts.Require().NoError(err)
+	println("l1Config", common.Bytes2Hex(l1Config))
+
+	header := headers[0].(*types.Header)
+	ts.Require().True(len(header.TrustedToDeterministic) >= 1)
+
+	trustedL1, err := header.TrustedToDeterministic[0].Marshal()
+	println("rawL1Header", common.Bytes2Hex(trustedL1))
+
+	println("trusted_timestamp", rawConsState.L1Timestamp)
+	println("trusted_slot", int64(rawConsState.L1Slot))
+	println("trusted_current_sync_committee", common.Bytes2Hex(rawConsState.L1CurrentSyncCommittee))
+
+	println("cs", common.Bytes2Hex(encodedCs))
+	println("consState", common.Bytes2Hex(encodedConsState))
+	println("now", time.Now().Unix())
+
+	td := len(header.TrustedToDeterministic) > 1 && header.TrustedToDeterministic[0].ExecutionUpdate.BlockNumber != header.TrustedToDeterministic[len(header.TrustedToDeterministic)-1].ExecutionUpdate.BlockNumber
+	pl := len(header.DeterministicToLatest) > 1 && header.DeterministicToLatest[0].ExecutionUpdate.BlockNumber != header.DeterministicToLatest[len(header.DeterministicToLatest)-1].ExecutionUpdate.BlockNumber
+
+	for i, t2d := range header.TrustedToDeterministic {
+		println("t2d", i, t2d.ExecutionUpdate.BlockNumber)
+	}
+	for i, d2t := range header.DeterministicToLatest {
+		println("d2t", i, d2t.ExecutionUpdate.BlockNumber)
+	}
+
+	// Change file name according to the number of TrustedToDeterministic and DeterministicToLatest
+	tdPart := "t"
+	if td {
+		tdPart = "td"
+	}
+	plPart := "l"
+	if pl {
+		plPart = "pl"
+	}
+	ts.Require().NoError(os.WriteFile(fmt.Sprintf("update_client_header_%s_%s.bin", tdPart, plPart), encodedUpdateClient, 0644))
+}
+
+func (ts *ProverTestSuite) outputForELCL1VerificationTest(headers []core.Header, trustedHeight clienttypes.Height) {
+	cs, consState, err := ts.prover.CreateInitialLightClientState(context.Background(), trustedHeight)
+	ts.Require().NoError(err)
+	rawCs := cs.(*types.ClientState)
+	rawL1Config, err := rawCs.L1Config.Marshal()
+	println("rawL1Config", common.Bytes2Hex(rawL1Config))
+	ts.Require().NoError(err)
+	rawConsState := consState.(*types.ConsensusState)
+	println("now", time.Now().Unix())
+	l1HeaderKeys := map[uint64]struct{}{}
+	var l1Headers []*types.L1Header
+	for _, header := range headers {
+		h := header.(*types.Header)
+		for _, l1H := range h.TrustedToDeterministic {
+			if _, ok := l1HeaderKeys[l1H.ExecutionUpdate.BlockNumber]; !ok {
+				l1HeaderKeys[l1H.ExecutionUpdate.BlockNumber] = struct{}{}
+				l1Headers = append(l1Headers, l1H)
+			}
+		}
+	}
+	for i, l1H := range l1Headers {
+		rawL1H, err := l1H.Marshal()
+		ts.Require().NoError(err)
+		println("rawL1Header", common.Bytes2Hex(rawL1H))
+		if i == 0 {
+			println("cons_slot", rawConsState.L1Slot)
+			println("cons_l1_current_sync_committee", common.Bytes2Hex(rawConsState.L1CurrentSyncCommittee))
+			println("cons_l1_next_sync_committee", common.Bytes2Hex(rawConsState.L1NextSyncCommittee))
+			println("cons_l1_timestamp", rawConsState.Timestamp)
+		} else {
+			println("cons_slot", l1Headers[i-1].ConsensusUpdate.FinalizedHeader.Slot)
+			if i == 1 {
+				println("cons_l1_current_sync_committee", common.Bytes2Hex(rawConsState.L1NextSyncCommittee))
+			} else {
+				println("cons_l1_current_sync_committee", common.Bytes2Hex(l1Headers[i-2].ConsensusUpdate.NextSyncCommittee.AggregatePubkey))
+			}
+			println("cons_l1_next_sync_committee", common.Bytes2Hex(l1Headers[i-1].ConsensusUpdate.NextSyncCommittee.AggregatePubkey))
+			println("cons_l1_timestamp", l1Headers[i-1].Timestamp)
+		}
+	}
 }
 
 type mockChain struct {

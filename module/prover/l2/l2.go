@@ -77,6 +77,8 @@ func (c *L2Client) GetLatestPreimageMetadata(ctx context.Context) (*PreimageMeta
 	return metadata, nil
 }
 
+// ListPreimageMetadata returns preimage metadata list between trustedHeight and latestHeight.
+// sorted ascending by claimed height.
 func (c *L2Client) ListPreimageMetadata(ctx context.Context, trustedHeight uint64, latestHeight uint64) ([]*PreimageMetadata, error) {
 	type Request struct {
 		LtClaimed uint64 `json:"lt_claimed"`
@@ -90,6 +92,7 @@ func (c *L2Client) ListPreimageMetadata(ctx context.Context, trustedHeight uint6
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to read preimage data")
 	}
+
 	var preimageDataList []*PreimageMetadata
 	if err = json.Unmarshal(response, &preimageDataList); err != nil {
 		return nil, errors.Wrap(err, "failed to unmarshal preimage data")
