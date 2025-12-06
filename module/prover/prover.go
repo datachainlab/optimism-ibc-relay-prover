@@ -187,14 +187,11 @@ func (pr *Prover) CheckRefreshRequired(ctx context.Context, counterparty core.Ch
 	}
 
 	// Get trusted 1 timestamp
-	l2Output, err := pr.l2Client.OutputAtBlock(ctx, cs.GetLatestHeight().GetRevisionHeight())
-	if err != nil {
-		return false, errors.Wrapf(err, "failed to get output at block: l2Number=%d", cs.GetLatestHeight().GetRevisionHeight())
-	}
-	l1HeaderTimestamp, err := pr.l1Client.TimestampAt(ctx, l2Output.BlockRef.DeterministicFinalizedL1())
+	trustedL1Header, _, err := pr.getDeterministicL1Header(ctx, cs.GetLatestHeight().GetRevisionHeight())
 	if err != nil {
 		return false, fmt.Errorf("failed to get trusted l1 timestamp: %v", err)
 	}
+	l1HeaderTimestamp := trustedL1Header.Timestamp
 	lcLastTimestamp := time.Unix(int64(l1HeaderTimestamp), 0)
 
 	// Get latest l1 timestamp on chain
@@ -324,14 +321,15 @@ func (pr *Prover) SetupForRelay(ctx context.Context) error {
 	return nil
 }
 
+// getDeterministicL1Header retrieves a deterministic L1 header and its associated L2 output response for a given L2 block number.
 func (pr *Prover) getDeterministicL1Header(ctx context.Context, l2Number uint64) (*types.L1Header, *l2.OutputResponse, error) {
 	l2Output, err := pr.l2Client.OutputAtBlock(ctx, l2Number)
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "failed to get output at block: l2Number=%d", l2Number)
 	}
-	l1Header, err := pr.l1Client.GetConsensusHeaderByBlockNumber(ctx, l2Output.BlockRef.DeterministicFinalizedL1())
+	l1Header, err := pr.l1Client.GetConsensusHeaderByBlockNumber(ctx, l2Output.BlockRef.L1Origin.Number)
 	if err != nil {
-		return nil, nil, errors.Wrapf(err, "failed to get l1 consensus: l1Number=%d", l2Output.BlockRef.DeterministicFinalizedL1())
+		return nil, nil, errors.Wrapf(err, "failed to get l1 consensus: l1Number=%d", l2Output.BlockRef.L1Origin.Number)
 	}
 	return l1Header, l2Output, nil
 }

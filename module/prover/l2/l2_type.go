@@ -62,11 +62,6 @@ type L2BlockRef struct {
 	SequenceNumber uint64      `json:"sequenceNumber"` // distance to first block of epoch
 }
 
-// L1 number for derivation needs to be decided deterministically.
-func (b *L2BlockRef) DeterministicFinalizedL1() uint64 {
-	return b.L1Origin.Number
-}
-
 type BlockID struct {
 	Hash   common.Hash `json:"hash"`
 	Number uint64      `json:"number"`
