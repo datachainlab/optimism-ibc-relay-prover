@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"slices"
 	"testing"
 	"time"
 
@@ -121,14 +122,14 @@ func (ts *ProverTestSuite) TestGetLatestFinalizedHeader() {
 }
 
 func (ts *ProverTestSuite) TestSetupHeadersForUpdateMultiRange() {
-	headers, trustedHeight := ts.setupHeadersForUpdate(3)
-	ts.outputForELCUpdateClientTest(headers, trustedHeight)
+	headers := ts.setupHeadersForUpdate(2)
+	ts.outputForELCL1VerificationTest(headers)
 }
 
 func (ts *ProverTestSuite) TestSetupHeadersForUpdateLatest() {
-	// trus after changing 'max_preimage_distance' to 400 in optimism-preimage-maker
-	headers, trustedHeight := ts.setupHeadersForUpdate(1)
-	ts.outputForELCL1VerificationTest(headers, trustedHeight)
+	// Change index to make testdata pattern for ELC
+	headers := ts.setupHeadersForUpdate(0)
+	ts.outputForELCUpdateClientTest(headers[len(headers)-1])
 }
 
 func (ts *ProverTestSuite) TestCheckRefreshRequired() {
@@ -179,17 +180,18 @@ func (ts *ProverTestSuite) TestCheckRefreshRequired() {
 
 }
 
-func (ts *ProverTestSuite) setupHeadersForUpdate(index int) ([]core.Header, clienttypes.Height) {
+func (ts *ProverTestSuite) setupHeadersForUpdate(index int) []core.Header {
 	latest, err := ts.prover.GetLatestFinalizedHeader(context.Background())
 	ts.Require().NoError(err)
 
 	// Make trusted height
 	preimageMetadataList, err := ts.prover.l2Client.ListPreimageMetadata(context.Background(), 1, latest.GetHeight().GetRevisionHeight())
 	ts.Require().NoError(err)
-	lastClaimed := preimageMetadataList[len(preimageMetadataList)-1-index].Claimed
+	slices.Reverse(preimageMetadataList)
+	lastAgreed := preimageMetadataList[index].Agreed
 
 	// client state
-	trustedHeight := clienttypes.NewHeight(0, lastClaimed)
+	trustedHeight := clienttypes.NewHeight(0, lastAgreed)
 	cs := &types.ClientState{
 		LatestHeight: &trustedHeight,
 	}
@@ -242,8 +244,8 @@ func (ts *ProverTestSuite) setupHeadersForUpdate(index int) ([]core.Header, clie
 			lastT2D = ih.TrustedToDeterministic[len(ih.TrustedToDeterministic)-1].ExecutionUpdate.BlockNumber
 		}
 	}
-	ts.Require().Equal(len(headers), index)
-	return headers, trustedHeight
+	ts.Require().Equal(len(headers), index+1)
+	return headers
 }
 
 func (ts *ProverTestSuite) TestMakeHeaderChan() {
@@ -281,10 +283,11 @@ func (ts *ProverTestSuite) TestMakeHeaderChan() {
 }
 
 // testdata for ELC
-func (ts *ProverTestSuite) outputForELCUpdateClientTest(headers []core.Header, trustedHeight clienttypes.Height) {
-	cs, consState, err := ts.prover.CreateInitialLightClientState(context.Background(), trustedHeight)
+func (ts *ProverTestSuite) outputForELCUpdateClientTest(coreHeader core.Header) {
+	header := coreHeader.(*types.Header)
+	cs, consState, err := ts.prover.CreateInitialLightClientState(context.Background(), header.TrustedHeight)
 	ts.Require().NoError(err)
-	rawUpdateClient, err := clienttypes.PackClientMessage(headers[0])
+	rawUpdateClient, err := clienttypes.PackClientMessage(header)
 	ts.Require().NoError(err)
 	encodedUpdateClient, err := rawUpdateClient.Marshal()
 	ts.Require().NoError(err)
@@ -301,7 +304,6 @@ func (ts *ProverTestSuite) outputForELCUpdateClientTest(headers []core.Header, t
 	ts.Require().NoError(err)
 	println("l1Config", common.Bytes2Hex(l1Config))
 
-	header := headers[0].(*types.Header)
 	ts.Require().True(len(header.TrustedToDeterministic) >= 1)
 
 	trustedL1, err := header.TrustedToDeterministic[0].Marshal()
@@ -337,8 +339,9 @@ func (ts *ProverTestSuite) outputForELCUpdateClientTest(headers []core.Header, t
 	ts.Require().NoError(os.WriteFile(fmt.Sprintf("update_client_header_%s_%s.bin", tdPart, plPart), encodedUpdateClient, 0644))
 }
 
-func (ts *ProverTestSuite) outputForELCL1VerificationTest(headers []core.Header, trustedHeight clienttypes.Height) {
-	cs, consState, err := ts.prover.CreateInitialLightClientState(context.Background(), trustedHeight)
+func (ts *ProverTestSuite) outputForELCL1VerificationTest(headers []core.Header) {
+	first := headers[0].(*types.Header)
+	cs, consState, err := ts.prover.CreateInitialLightClientState(context.Background(), first.TrustedHeight)
 	ts.Require().NoError(err)
 	rawCs := cs.(*types.ClientState)
 	rawL1Config, err := rawCs.L1Config.Marshal()
