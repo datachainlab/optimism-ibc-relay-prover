@@ -32,7 +32,6 @@ type Prover struct {
 	refreshThresholdRate      *types.Fraction
 	maxClockDrift             time.Duration
 	maxHeaderConcurrency      uint64
-	maxL2NumsForPreimage      uint64
 	disputeGameFactoryAddress common.Address
 
 	logger *log.RelayLogger
@@ -443,13 +442,9 @@ func NewProver(chain *ethereum.Chain,
 	refreshThresholdRate *types.Fraction,
 	maxClockDrift time.Duration,
 	maxHeaderConcurrency uint64,
-	maxL2NumsForPreimage uint64,
 	disputeGameFactoryAddress common.Address,
 	logger *log.RelayLogger,
 ) *Prover {
-	if maxL2NumsForPreimage == 0 {
-		maxL2NumsForPreimage = 100
-	}
 	return &Prover{
 		l2Client:                  l2Client,
 		l1Client:                  l1Client,
@@ -457,7 +452,6 @@ func NewProver(chain *ethereum.Chain,
 		refreshThresholdRate:      refreshThresholdRate,
 		maxClockDrift:             maxClockDrift,
 		maxHeaderConcurrency:      max(maxHeaderConcurrency, 1),
-		maxL2NumsForPreimage:      maxL2NumsForPreimage,
 		codec:                     chain.Codec(),
 		disputeGameFactoryAddress: disputeGameFactoryAddress,
 		logger:                    logger,
