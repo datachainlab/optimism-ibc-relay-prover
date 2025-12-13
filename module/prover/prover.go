@@ -2,7 +2,6 @@ package prover
 
 import (
 	"context"
-	"fmt"
 	"sync/atomic"
 	"time"
 
@@ -132,35 +131,57 @@ func (pr *Prover) SetupHeadersForUpdate(ctx context.Context, counterparty core.F
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to list preimage metadata : trusted height=%d", trustedHeight.RevisionHeight)
 	}
-	headerChunk, err := pr.splitHeaders(ctx, preimageMetadataList)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to split headers")
-	}
 
-	return pr.makeHeaderChan(ctx, headerChunk, func(ctx context.Context, chunk *HeaderChunk) (core.Header, error) {
+	return pr.makeHeaderChan(ctx, preimageMetadataList, func(ctx context.Context, metadata *l2.PreimageMetadata) (core.Header, error) {
+
+		// Get deterministic L1
+		agreedDeterministicL1, agreedOutput, err := pr.getDeterministicL1Header(ctx, metadata.Agreed)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to get determinisitic l1 header: l2Number=%d", metadata.Claimed)
+		}
+		claimedDeterministicL1, claimedOutput, err := pr.getDeterministicL1Header(ctx, metadata.Claimed)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to get determinisitic l1 header: l2Number=%d", metadata.Claimed)
+		}
+
+		// Get the latest finalized L1 that created preimages
+		latestL1, err := pr.l1Client.GetFinalizedL1Header(ctx, metadata.L1Head)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to get latest l1 header: l1Number=%d", metadata.L1Head)
+		}
+
+		pr.GetLogger().InfoContext(ctx, "header chunk",
+			"agreed_l2", agreedOutput.BlockRef.Number,
+			"agreed_deterministic_l1_slot", agreedDeterministicL1.ConsensusUpdate.FinalizedHeader.Slot,
+			"claimed_l2", claimedOutput.BlockRef.Number,
+			"claimed_deterministic_l1_slot", claimedDeterministicL1.ConsensusUpdate.FinalizedHeader.Slot,
+			"latest_l1_slot", latestL1.ConsensusUpdate.FinalizedHeader.Slot,
+		)
+
+		// Get preimage data and build header for update
 		ih := &types.Header{
-			TrustedHeight: util.NewHeight(chunk.AgreedOutput.BlockRef.Number),
+			TrustedHeight: util.NewHeight(agreedOutput.BlockRef.Number),
 			Derivation: &types.Derivation{
-				AgreedL2OutputRoot: chunk.AgreedOutput.OutputRoot[:],
-				L2OutputRoot:       chunk.ClaimedOutput.OutputRoot[:],
-				L2BlockNumber:      chunk.ClaimedOutput.BlockRef.Number,
+				AgreedL2OutputRoot: agreedOutput.OutputRoot[:],
+				L2OutputRoot:       claimedOutput.OutputRoot[:],
+				L2BlockNumber:      claimedOutput.BlockRef.Number,
 			},
 		}
-		ih.AccountUpdate, err = pr.l2Client.BuildAccountUpdate(ctx, chunk.ClaimedOutput.BlockRef.Number)
+		ih.AccountUpdate, err = pr.l2Client.BuildAccountUpdate(ctx, claimedOutput.BlockRef.Number)
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to build account update: number=%d", chunk.ClaimedOutput.BlockRef.Number)
+			return nil, errors.Wrapf(err, "failed to build account update: number=%d", claimedOutput.BlockRef.Number)
 		}
-		ih.TrustedToDeterministic, err = pr.l1Client.GetSyncCommitteesFromTrustedToLatest(ctx, chunk.AgreedDeterministicL1, chunk.ClaimedDeterministicL1)
+		ih.TrustedToDeterministic, err = pr.l1Client.GetSyncCommitteesFromTrustedToLatest(ctx, agreedDeterministicL1, claimedDeterministicL1)
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to get sync committiees from trusted to latest: trusted=%d, deterministic=%d", chunk.AgreedDeterministicL1.ConsensusUpdate.FinalizedHeader.Slot, chunk.ClaimedDeterministicL1.ConsensusUpdate.FinalizedHeader.Slot)
+			return nil, errors.Wrapf(err, "failed to get sync committiees from trusted to latest: trusted=%d, deterministic=%d", agreedDeterministicL1.ConsensusUpdate.FinalizedHeader.Slot, claimedDeterministicL1.ConsensusUpdate.FinalizedHeader.Slot)
 		}
-		ih.DeterministicToLatest, err = pr.l1Client.GetSyncCommitteesFromTrustedToLatest(ctx, chunk.ClaimedDeterministicL1, chunk.LatestL1)
+		ih.DeterministicToLatest, err = pr.l1Client.GetSyncCommitteesFromTrustedToLatest(ctx, claimedDeterministicL1, latestL1)
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to get sync committiees from trusted to latest: deterministic=%d, latest=%d", chunk.ClaimedDeterministicL1.ConsensusUpdate.FinalizedHeader.Slot, chunk.LatestL1.ConsensusUpdate.FinalizedHeader.Slot)
+			return nil, errors.Wrapf(err, "failed to get sync committiees from trusted to latest: deterministic=%d, latest=%d", claimedDeterministicL1.ConsensusUpdate.FinalizedHeader.Slot, latestL1.ConsensusUpdate.FinalizedHeader.Slot)
 		}
-		preimage, err := pr.l2Client.GetPreimages(ctx, chunk.PreimageMetadata)
+		preimage, err := pr.l2Client.GetPreimages(ctx, metadata)
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to get preimages: claimed=%d ", chunk.ClaimedOutput.BlockRef.Number)
+			return nil, errors.Wrapf(err, "failed to get preimages: claimed=%d ", claimedOutput.BlockRef.Number)
 		}
 		ih.Preimages = preimage
 
@@ -171,24 +192,24 @@ func (pr *Prover) SetupHeadersForUpdate(ctx context.Context, counterparty core.F
 func (pr *Prover) CheckRefreshRequired(ctx context.Context, counterparty core.ChainInfoICS02Querier) (bool, error) {
 	cpQueryHeight, err := counterparty.LatestHeight(ctx)
 	if err != nil {
-		return false, fmt.Errorf("failed to get the latest height of the counterparty chain: %v", err)
+		return false, errors.Wrapf(err, "failed to get latest height on counterparty chain")
 	}
-	cpQueryCtx := core.NewQueryContext(context.TODO(), cpQueryHeight)
+	cpQueryCtx := core.NewQueryContext(ctx, cpQueryHeight)
 
 	resCs, err := counterparty.QueryClientState(cpQueryCtx)
 	if err != nil {
-		return false, fmt.Errorf("failed to query the client state on the counterparty chain: %v", err)
+		return false, errors.Wrapf(err, "failed to query client state on counterparty chain")
 	}
 
 	var cs exported.ClientState
 	if err = pr.codec.UnpackAny(resCs.ClientState, &cs); err != nil {
-		return false, fmt.Errorf("failed to unpack Any into tendermint client state: %v", err)
+		return false, errors.Wrapf(err, "failed to unpack client state")
 	}
 
 	// Get trusted 1 timestamp
 	trustedL1Header, _, err := pr.getDeterministicL1Header(ctx, cs.GetLatestHeight().GetRevisionHeight())
 	if err != nil {
-		return false, fmt.Errorf("failed to get trusted l1 timestamp: %v", err)
+		return false, errors.Wrapf(err, "failed to get deterministic l1 header")
 	}
 	l1HeaderTimestamp := trustedL1Header.Timestamp
 	lcLastTimestamp := time.Unix(int64(l1HeaderTimestamp), 0)
@@ -196,7 +217,7 @@ func (pr *Prover) CheckRefreshRequired(ctx context.Context, counterparty core.Ch
 	// Get latest l1 timestamp on chain
 	latestL1Header, err := pr.l1Client.GetLatestETHHeader(ctx)
 	if err != nil {
-		return false, fmt.Errorf("failed to get latest l1 header: %v", err)
+		return false, errors.Wrapf(err, "failed to get latest l1 header")
 	}
 	selfTimestamp := time.Unix(int64(latestL1Header.Time), 0)
 
@@ -333,52 +354,7 @@ func (pr *Prover) getDeterministicL1Header(ctx context.Context, l2Number uint64)
 	return l1Header, l2Output, nil
 }
 
-type HeaderChunk struct {
-	AgreedOutput           *l2.OutputResponse
-	AgreedDeterministicL1  *types.L1Header
-	ClaimedOutput          *l2.OutputResponse
-	ClaimedDeterministicL1 *types.L1Header
-	LatestL1               *types.L1Header
-	PreimageMetadata       *l2.PreimageMetadata
-}
-
-func (pr *Prover) splitHeaders(ctx context.Context, preimageMetadataList []*l2.PreimageMetadata) ([]*HeaderChunk, error) {
-
-	chunk := make([]*HeaderChunk, len(preimageMetadataList))
-	for i, metadata := range preimageMetadataList {
-		trustedL1, agreedOutput, err := pr.getDeterministicL1Header(ctx, metadata.Agreed)
-		if err != nil {
-			return nil, errors.Wrapf(err, "failed to get determinisitic l1 header: l2Number=%d", metadata.Claimed)
-		}
-		deterministicL1, claimingOutput, err := pr.getDeterministicL1Header(ctx, metadata.Claimed)
-		if err != nil {
-			return nil, errors.Wrapf(err, "failed to get determinisitic l1 header: l2Number=%d", metadata.Claimed)
-		}
-		latestL1, err := pr.l1Client.GetFinalizedL1Header(ctx, metadata.L1Head)
-		if err != nil {
-			return nil, errors.Wrapf(err, "failed to get latest l1 header: l1Number=%d", metadata.L1Head)
-		}
-
-		chunk[i] = &HeaderChunk{
-			AgreedOutput:           agreedOutput,
-			AgreedDeterministicL1:  trustedL1,
-			ClaimedOutput:          claimingOutput,
-			ClaimedDeterministicL1: deterministicL1,
-			LatestL1:               latestL1,
-			PreimageMetadata:       metadata,
-		}
-		pr.GetLogger().InfoContext(ctx, "header chunk",
-			"agreed_l2", chunk[i].AgreedOutput.BlockRef.Number,
-			"agreed_deterministic_l1_slot", chunk[i].AgreedDeterministicL1.ConsensusUpdate.FinalizedHeader.Slot,
-			"claimed_l2", chunk[i].ClaimedOutput.BlockRef.Number,
-			"claimed_deterministic_l1_slot", chunk[i].ClaimedDeterministicL1.ConsensusUpdate.FinalizedHeader.Slot,
-			"latest_l1_slot", chunk[i].LatestL1.ConsensusUpdate.FinalizedHeader.Slot,
-		)
-	}
-	return chunk, nil
-}
-
-func (pr *Prover) makeHeaderChan(ctx context.Context, requests []*HeaderChunk, fn func(context.Context, *HeaderChunk) (core.Header, error)) <-chan *core.HeaderOrError {
+func (pr *Prover) makeHeaderChan(ctx context.Context, requests []*l2.PreimageMetadata, fn func(context.Context, *l2.PreimageMetadata) (core.Header, error)) <-chan *core.HeaderOrError {
 	out := make(chan *core.HeaderOrError)
 	sem := make(chan struct{}, pr.maxHeaderConcurrency)
 	done := make(chan struct{}, len(requests))
@@ -389,7 +365,7 @@ func (pr *Prover) makeHeaderChan(ctx context.Context, requests []*HeaderChunk, f
 		for i, chunk := range requests {
 			// block if the number of concurrent workers reaches maxHeaderConcurrency
 			sem <- struct{}{}
-			go func(index int, chunk *HeaderChunk) {
+			go func(index int, chunk *l2.PreimageMetadata) {
 				defer func() { done <- struct{}{} }()
 				ret, err := fn(ctx, chunk)
 				buffer[index].Store(&core.HeaderOrError{

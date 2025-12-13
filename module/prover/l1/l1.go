@@ -68,22 +68,22 @@ func (pr *L1Client) GetFinalizedL1Header(ctx context.Context, l1HeadHash common.
 	request := &Request{L1HeadHash: l1HeadHash}
 	rawResponse, err := pr.preimageMakerHttpClient.POST(ctx, fmt.Sprintf("%s/get_finalized_l1", pr.preimageMakerEndpoint.Get()), request)
 	if err != nil {
-		return nil, errors.WithStack(err)
+		return nil, errors.Wrap(err, "failed to get finalized L1 header from preimage maker")
 	}
 	var res beacon.LightClientFinalityUpdateResponse
 	if err = json.Unmarshal(rawResponse, &res); err != nil {
-		return nil, errors.Wrapf(err, "failed to unmarshal")
+		return nil, errors.Wrap(err, "failed to unmarshal")
 	}
 
 	lcUpdate := res.Data.ToProto()
 	executionHeader := &res.Data.FinalizedHeader.Execution
 	executionUpdate, err := pr.buildExecutionUpdate(executionHeader)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build execution update: %v", err)
+		return nil, errors.Wrap(err, "failed to build execution update")
 	}
 	executionRoot, err := executionHeader.HashTreeRoot()
 	if err != nil {
-		return nil, fmt.Errorf("failed to calculate execution root: %v", err)
+		return nil, errors.Wrap(err, "failed to calculate execution root")
 	}
 	if !bytes.Equal(executionRoot[:], lcUpdate.FinalizedExecutionRoot) {
 		return nil, fmt.Errorf("execution root mismatch: %X != %X", executionRoot, lcUpdate.FinalizedExecutionRoot)
@@ -99,27 +99,27 @@ func (pr *L1Client) BuildInitialState(ctx context.Context, blockNumber uint64) (
 
 	timestamp, err := pr.TimestampAt(ctx, blockNumber)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "failed to get timestamp at blockNumber=%d", blockNumber)
 	}
 	slot, err := pr.getSlotAtTimestamp(ctx, timestamp)
 	if err != nil {
-		return nil, fmt.Errorf("failed to compute slot at timestamp: %v", err)
+		return nil, errors.Wrapf(err, "failed to get slot at timestamp=%d", timestamp)
 	}
 	period := pr.computeSyncCommitteePeriod(pr.computeEpoch(slot))
 
 	currentSyncCommittee, err := pr.getBootstrapInPeriod(ctx, period)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get bootstrap in period %v: %v", period, err)
+		return nil, errors.Wrapf(err, "failed to get bootstrap in period %v", period)
 	}
 	res2, err := pr.beaconClient.GetLightClientUpdate(ctx, period)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get LightClientUpdate: period=%v %v", period, err)
+		return nil, errors.Wrapf(err, "failed to get LightClientUpdate: period=%v", period)
 	}
 	nextSyncCommittee := res2.Data.ToProto().NextSyncCommittee
 
 	genesis, err := pr.beaconClient.GetGenesis(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get genesis: %v", err)
+		return nil, errors.Wrapf(err, "failed to get genesis")
 	}
 
 	return &InitialState{
@@ -135,11 +135,11 @@ func (pr *L1Client) BuildInitialState(ctx context.Context, blockNumber uint64) (
 func (pr *L1Client) GetConsensusHeaderByBlockNumber(ctx context.Context, blockNumber uint64) (*types.L1Header, error) {
 	timestamp, err := pr.TimestampAt(ctx, blockNumber)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "failed to get timestamp at blockNumber=%d", blockNumber)
 	}
 	slot, err := pr.getSlotAtTimestamp(ctx, timestamp)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "failed to get slot at timestamp=%d", timestamp)
 	}
 	period := pr.computeSyncCommitteePeriod(pr.computeEpoch(slot))
 	res, err := pr.BuildNextSyncCommitteeUpdate(ctx, period, nil)
@@ -152,16 +152,16 @@ func (pr *L1Client) GetSyncCommitteesFromTrustedToLatest(ctx context.Context, tr
 	pr.logger.DebugContext(ctx, "GetSyncCommitteesFromTrustedToLatest", "statePeriod", statePeriod, "latestPeriod", latestPeriod)
 	res, err := pr.beaconClient.GetLightClientUpdate(ctx, statePeriod)
 	if err != nil {
-		return nil, errors.WithStack(err)
+		return nil, errors.Wrapf(err, "failed to get LightClientUpdate: state_period=%v", statePeriod)
 	}
 	if statePeriod == latestPeriod {
 		root, err := res.Data.FinalizedHeader.Beacon.HashTreeRoot()
 		if err != nil {
-			return nil, errors.WithStack(err)
+			return nil, errors.Wrap(err, "failed to calculate root")
 		}
 		bootstrapRes, err := pr.beaconClient.GetBootstrap(ctx, root[:])
 		if err != nil {
-			return nil, errors.WithStack(err)
+			return nil, errors.Wrap(err, "failed to get bootstrap")
 		}
 		lfh.TrustedSyncCommittee = &lctypes.TrustedSyncCommittee{
 			SyncCommittee: bootstrapRes.Data.CurrentSyncCommittee.ToProto(),
@@ -181,13 +181,13 @@ func (pr *L1Client) GetSyncCommitteesFromTrustedToLatest(ctx context.Context, tr
 	)
 	res, err = pr.beaconClient.GetLightClientUpdate(ctx, statePeriod)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get LightClientUpdate: state_period=%v %v", statePeriod, err)
+		return nil, errors.Wrapf(err, "failed to get LightClientUpdate: state_period=%v", statePeriod)
 	}
 	trustedNextSyncCommittee = res.Data.ToProto().NextSyncCommittee
 	for p := statePeriod + 1; p <= latestPeriod; p++ {
 		header, err := pr.BuildNextSyncCommitteeUpdate(ctx, p, trustedNextSyncCommittee)
 		if err != nil {
-			return nil, fmt.Errorf("failed to build next sync committee update for next: period=%v %v", p, err)
+			return nil, errors.Wrapf(err, "failed to build next sync committee update: period=%v", p)
 		}
 		trustedCurrentSyncCommittee = trustedNextSyncCommittee
 		trustedNextSyncCommittee = header.ConsensusUpdate.NextSyncCommittee
@@ -203,7 +203,7 @@ func (pr *L1Client) GetSyncCommitteesFromTrustedToLatest(ctx context.Context, tr
 func (pr *L1Client) TimestampAt(ctx context.Context, number uint64) (uint64, error) {
 	header, err := pr.executionClient.HeaderByNumber(ctx, util.NewBigInt(number))
 	if err != nil {
-		return 0, errors.WithStack(err)
+		return 0, errors.Wrapf(err, "failed to get block from number: number=%d", number)
 	}
 	return header.Time, nil
 }
@@ -239,11 +239,11 @@ func (pr *L1Client) BuildNextSyncCommitteeUpdate(ctx context.Context, period uin
 	executionHeader := &res.Data.FinalizedHeader.Execution
 	executionUpdate, err := pr.buildExecutionUpdate(executionHeader)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build execution update: %v", err)
+		return nil, errors.Wrap(err, "failed to build execution update")
 	}
 	executionRoot, err := executionHeader.HashTreeRoot()
 	if err != nil {
-		return nil, fmt.Errorf("failed to calculate execution root: %v", err)
+		return nil, errors.Wrap(err, "failed to calculate execution root")
 	}
 	if !bytes.Equal(executionRoot[:], lcUpdate.FinalizedExecutionRoot) {
 		return nil, fmt.Errorf("execution root mismatch: %X != %X", executionRoot, lcUpdate.FinalizedExecutionRoot)

@@ -41,7 +41,6 @@ func (c *ProverConfig) Build(chain core.Chain) (core.Prover, error) {
 	}
 	l2Client := l2.NewL2Client(
 		l2Chain,
-		c.L1ExecutionEndpoint,
 		c.OpNodeTimeout,
 		c.PreimageMakerTimeout,
 		c.PreimageMakerEndpoint,

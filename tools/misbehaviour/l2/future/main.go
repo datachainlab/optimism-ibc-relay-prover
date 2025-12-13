@@ -3,6 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
+	"math/big"
+	"os"
+	"time"
+
 	"github.com/cockroachdb/errors"
 	types2 "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/types"
@@ -10,9 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/hyperledger-labs/yui-relayer/log"
-	"math/big"
-	"os"
-	"time"
 )
 
 func main() {
@@ -48,7 +49,11 @@ func run(ctx context.Context) error {
 	}
 
 	// Get finalized L1
-	l1Header, err := config.ProverL1Client.GetLatestFinalizedL1Header(ctx)
+	latestMetadata, err := config.ProverL2Client.GetLatestPreimageMetadata(ctx)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	l1Header, err := config.ProverL1Client.GetFinalizedL1Header(ctx, latestMetadata.L1Head)
 	if err != nil {
 		return errors.WithStack(err)
 	}

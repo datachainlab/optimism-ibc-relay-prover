@@ -98,8 +98,8 @@ func (ts *ProverTestSuite) SetupTest() {
 	preimageMakerTimeout := 300 * time.Second
 	logger := log.GetLogger().WithChain(l2Chain.ChainID()).WithModule(ModuleName)
 	l1Client, _ := l1.NewL1Client(context.Background(), l1BeaconEndpoint, l1ExecutionEndpoint, preimageMakerTimeout, preimageMakerEndpoint, nil, logger)
-	l2Client := l2.NewL2Client(l2Chain, l1ExecutionEndpoint, opNodeTimeout, preimageMakerTimeout, preimageMakerEndpoint, opNodeEndpoint, logger)
-	ts.prover = NewProver(l2Chain, l1Client, l2Client, trustingPeriod, refreshThresholdRate, maxClockDrift, 4, 40, common.Address{}, logger)
+	l2Client := l2.NewL2Client(l2Chain, opNodeTimeout, preimageMakerTimeout, preimageMakerEndpoint, opNodeEndpoint, logger)
+	ts.prover = NewProver(l2Chain, l1Client, l2Client, trustingPeriod, refreshThresholdRate, maxClockDrift, 4, common.Address{}, logger)
 }
 
 func (ts *ProverTestSuite) TestCreateInitialLightClientState() {
@@ -249,23 +249,19 @@ func (ts *ProverTestSuite) setupHeadersForUpdate(index int) []core.Header {
 }
 
 func (ts *ProverTestSuite) TestMakeHeaderChan() {
-	headerChunks := make([]*HeaderChunk, 99)
+	headerChunks := make([]*l2.PreimageMetadata, 99)
 	for i := 0; i < len(headerChunks); i++ {
-		headerChunks[i] = &HeaderChunk{
-			ClaimedOutput: &l2.OutputResponse{
-				BlockRef: l2.L2BlockRef{
-					Number: uint64(i + 1),
-				},
-			},
+		headerChunks[i] = &l2.PreimageMetadata{
+			Claimed: uint64(i + 1),
 		}
 	}
 
-	ret := ts.prover.makeHeaderChan(context.Background(), headerChunks, func(ctx context.Context, header *HeaderChunk) (core.Header, error) {
+	ret := ts.prover.makeHeaderChan(context.Background(), headerChunks, func(ctx context.Context, header *l2.PreimageMetadata) (core.Header, error) {
 		time.Sleep(time.Duration(max(1, rand.Int31n(3))) * time.Second)
-		println("run header", header.ClaimedOutput.BlockRef.Number)
+		println("run header", header.Claimed)
 		return &types.Header{
 			Derivation: &types.Derivation{
-				L2BlockNumber: header.ClaimedOutput.BlockRef.Number,
+				L2BlockNumber: header.Claimed,
 			},
 		}, nil
 	})

@@ -4,14 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"time"
+
 	"github.com/cockroachdb/errors"
 	types2 "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l1"
+	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l2"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/hyperledger-labs/yui-relayer/log"
-	"os"
-	"time"
 )
 
 func main() {
@@ -41,23 +43,34 @@ func run(ctx context.Context) error {
 	proverL1Client, err := l1.NewL1Client(ctx,
 		fmt.Sprintf("http://localhost:%d", hostPort.L1BeaconPort),
 		fmt.Sprintf("http://localhost:%d", hostPort.L1GethPort),
+		10*time.Second,
+
+		"http://localhost:10080",
 		nil,
 		log.GetLogger().WithModule("l1"),
 	)
 	if err != nil {
 		return errors.WithStack(err)
 	}
+	proverL2Client := l2.NewL2Client(nil,
+		10*time.Second,
+		10*time.Second,
+		"http://localhost:10080",
+		"",
+		log.GetLogger().WithModule("l2"),
+	)
+	latestMetadata, err := proverL2Client.GetLatestPreimageMetadata(ctx)
+	if err != nil {
+		return errors.WithStack(err)
+	}
 
-	l1Header1, err := proverL1Client.GetLatestFinalizedL1Header(ctx)
+	l1Header1, err := proverL1Client.GetFinalizedL1Header(ctx, latestMetadata.L1Head)
 	if err != nil {
 		return errors.WithStack(err)
 	}
-	l1Header2, err := proverL1Client.GetLatestFinalizedL1Header(ctx)
+	l1Header2, err := proverL1Client.GetFinalizedL1Header(ctx, latestMetadata.L1Head)
 	if err != nil {
 		return errors.WithStack(err)
-	}
-	if l1Header1.ConsensusUpdate.FinalizedHeader.Slot != l1Header2.ConsensusUpdate.FinalizedHeader.Slot {
-		return errors.New("target l1 headers are not equal")
 	}
 
 	l1InitialState, err := proverL1Client.BuildInitialState(ctx, l1Header1.ExecutionUpdate.BlockNumber)
@@ -78,7 +91,7 @@ func run(ctx context.Context) error {
 	}
 	l1Header2.TrustedSyncCommittee = l1Header1.TrustedSyncCommittee
 
-	// Change for misbehaviour detection
+	// Change for misbehavior detection
 	l1Header2.ConsensusUpdate.FinalizedHeader.ProposerIndex = l1Header1.ConsensusUpdate.FinalizedHeader.ProposerIndex + 1
 
 	misbehaviour := types.FinalizedHeaderMisbehaviour{

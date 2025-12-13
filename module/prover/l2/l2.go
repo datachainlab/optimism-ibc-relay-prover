@@ -43,20 +43,14 @@ type L2Client struct {
 }
 
 func NewL2Client(chain *ethereum.Chain,
-	l1ExecutionEndpoint string,
 	opNodeTimeout time.Duration,
 	preimageMakerTimeout time.Duration,
 	preimageMakerEndpoint string,
 	opNodeEndpoint string,
 	logger *log.RelayLogger,
 ) *L2Client {
-	l1ExecutionClient, err := ethclient.Dial(l1ExecutionEndpoint)
-	if err != nil {
-		panic(err)
-	}
 	return &L2Client{
 		Chain:                   chain,
-		l1ExecutionClient:       l1ExecutionClient,
 		opNodeTimeout:           opNodeTimeout,
 		preimageMakerHttpClient: util.NewHTTPClient(preimageMakerTimeout),
 		preimageMakerEndpoint:   util.NewSelector(strings.Split(preimageMakerEndpoint, ",")),
