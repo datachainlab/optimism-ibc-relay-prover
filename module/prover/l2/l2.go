@@ -15,7 +15,6 @@ import (
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/hyperledger-labs/yui-relayer/log"
 )
 
@@ -34,7 +33,6 @@ type DerivationL2Attribute struct {
 
 type L2Client struct {
 	*ethereum.Chain
-	l1ExecutionClient       *ethclient.Client
 	opNodeTimeout           time.Duration
 	preimageMakerHttpClient *util.HTTPClient
 	preimageMakerEndpoint   *util.Selector[string]
@@ -62,11 +60,11 @@ func NewL2Client(chain *ethereum.Chain,
 func (c *L2Client) GetLatestPreimageMetadata(ctx context.Context) (*PreimageMetadata, error) {
 	response, err := c.preimageMakerHttpClient.POST(ctx, fmt.Sprintf("%s/get_latest_metadata", c.preimageMakerEndpoint.Get()), nil)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to read preimage data")
+		return nil, errors.Wrap(err, "failed to get latest preimage metadata")
 	}
 	var metadata *PreimageMetadata
 	if err = json.Unmarshal(response, &metadata); err != nil {
-		return nil, errors.Wrap(err, "failed to unmarshal preimage data")
+		return nil, errors.Wrap(err, "failed to unmarshal latest preimage metadata")
 	}
 	return metadata, nil
 }
@@ -84,7 +82,7 @@ func (c *L2Client) ListPreimageMetadata(ctx context.Context, trustedHeight uint6
 	}
 	response, err := c.preimageMakerHttpClient.POST(ctx, fmt.Sprintf("%s/list_metadata", c.preimageMakerEndpoint.Get()), request)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to read preimage data")
+		return nil, errors.Wrap(err, "failed to list preimage data")
 	}
 
 	var preimageDataList []*PreimageMetadata

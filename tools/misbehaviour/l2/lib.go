@@ -73,7 +73,7 @@ func NewConfig(ctx context.Context) (*Config, error) {
 		10*time.Second,
 		"http://localhost:10080",
 		"",
-		log.GetLogger().WithModule("l1"),
+		log.GetLogger().WithModule("l2"),
 	)
 	disputeGameFactoryCaller, err := bindings.NewDisputeGameFactoryCaller(disputeGameFactoryProxyAddr, l1Client)
 	if err != nil {

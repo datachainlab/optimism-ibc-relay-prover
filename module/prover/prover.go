@@ -137,17 +137,17 @@ func (pr *Prover) SetupHeadersForUpdate(ctx context.Context, counterparty core.F
 		// Get deterministic L1
 		agreedDeterministicL1, agreedOutput, err := pr.getDeterministicL1Header(ctx, metadata.Agreed)
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to get determinisitic l1 header: l2Number=%d", metadata.Claimed)
+			return nil, errors.Wrapf(err, "failed to get deterministic l1 header: l2Number=%d", metadata.Claimed)
 		}
 		claimedDeterministicL1, claimedOutput, err := pr.getDeterministicL1Header(ctx, metadata.Claimed)
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to get determinisitic l1 header: l2Number=%d", metadata.Claimed)
+			return nil, errors.Wrapf(err, "failed to get deterministic l1 header: l2Number=%d", metadata.Claimed)
 		}
 
 		// Get the latest finalized L1 that created preimages
 		latestL1, err := pr.l1Client.GetFinalizedL1Header(ctx, metadata.L1Head)
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to get latest l1 header: l1Number=%d", metadata.L1Head)
+			return nil, errors.Wrapf(err, "failed to get latest l1 header: l1Number=%s", metadata.L1Head.String())
 		}
 
 		pr.GetLogger().InfoContext(ctx, "header chunk",
@@ -173,11 +173,11 @@ func (pr *Prover) SetupHeadersForUpdate(ctx context.Context, counterparty core.F
 		}
 		ih.TrustedToDeterministic, err = pr.l1Client.GetSyncCommitteesFromTrustedToLatest(ctx, agreedDeterministicL1, claimedDeterministicL1)
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to get sync committiees from trusted to latest: trusted=%d, deterministic=%d", agreedDeterministicL1.ConsensusUpdate.FinalizedHeader.Slot, claimedDeterministicL1.ConsensusUpdate.FinalizedHeader.Slot)
+			return nil, errors.Wrapf(err, "failed to get sync committees from trusted to latest: trusted=%d, deterministic=%d", agreedDeterministicL1.ConsensusUpdate.FinalizedHeader.Slot, claimedDeterministicL1.ConsensusUpdate.FinalizedHeader.Slot)
 		}
 		ih.DeterministicToLatest, err = pr.l1Client.GetSyncCommitteesFromTrustedToLatest(ctx, claimedDeterministicL1, latestL1)
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to get sync committiees from trusted to latest: deterministic=%d, latest=%d", claimedDeterministicL1.ConsensusUpdate.FinalizedHeader.Slot, latestL1.ConsensusUpdate.FinalizedHeader.Slot)
+			return nil, errors.Wrapf(err, "failed to get sync committees from trusted to latest: deterministic=%d, latest=%d", claimedDeterministicL1.ConsensusUpdate.FinalizedHeader.Slot, latestL1.ConsensusUpdate.FinalizedHeader.Slot)
 		}
 		preimage, err := pr.l2Client.GetPreimages(ctx, metadata)
 		if err != nil {
@@ -243,7 +243,7 @@ func (pr *Prover) CreateInitialLightClientState(ctx context.Context, height expo
 		l2Number = height.GetRevisionHeight()
 		l1Header, trustedOutput, err := pr.getDeterministicL1Header(ctx, l2Number)
 		if err != nil {
-			return nil, nil, errors.Wrapf(err, "failed to get determinisitic l1 header: l2Number=%d", l2Number)
+			return nil, nil, errors.Wrapf(err, "failed to get deterministic l1 header: l2Number=%d", l2Number)
 		}
 		l2OutputRoot = trustedOutput.OutputRoot[:]
 		l1Number = l1Header.ExecutionUpdate.BlockNumber

@@ -82,8 +82,12 @@ func (b *Bytes32) UnmarshalJSON(text []byte) error {
 	return hexutil.UnmarshalFixedJSON(reflect.TypeOf(b), text, b[:])
 }
 
+// PreimageMetadata contains metadata about a preimage
 type PreimageMetadata struct {
-	Agreed  uint64      `json:"agreed"`
-	Claimed uint64      `json:"claimed"`
-	L1Head  common.Hash `json:"l1_head"`
+	// Agreed l2 block number
+	Agreed uint64 `json:"agreed"`
+	// Claimed l2 block number
+	Claimed uint64 `json:"claimed"`
+	// L1 head hash for derivation
+	L1Head common.Hash `json:"l1_head"`
 }
