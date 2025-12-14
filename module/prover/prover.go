@@ -137,11 +137,11 @@ func (pr *Prover) SetupHeadersForUpdate(ctx context.Context, counterparty core.F
 		// Get deterministic L1
 		agreedDeterministicL1, agreedOutput, err := pr.getDeterministicL1Header(ctx, metadata.Agreed)
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to get deterministic l1 header: l2Number=%d", metadata.Claimed)
+			return nil, errors.Wrapf(err, "failed to get deterministic l1 header: agreed l2Number=%d", metadata.Agreed)
 		}
 		claimedDeterministicL1, claimedOutput, err := pr.getDeterministicL1Header(ctx, metadata.Claimed)
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to get deterministic l1 header: l2Number=%d", metadata.Claimed)
+			return nil, errors.Wrapf(err, "failed to get deterministic l1 header: claimed l2Number=%d", metadata.Claimed)
 		}
 
 		// Get the latest finalized L1 that created preimages
