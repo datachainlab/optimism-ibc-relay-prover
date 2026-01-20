@@ -92,7 +92,7 @@ func (c *L2Client) ListPreimageMetadata(ctx context.Context, trustedHeight uint6
 	return preimageDataList, nil
 }
 
-func (c *L2Client) GetPreimages(ctx context.Context, request *PreimageMetadata) ([]byte, error) {
+func (c *L2Client) GetPreimage(ctx context.Context, request *PreimageMetadata) ([]byte, error) {
 	preimageData, err := c.preimageMakerHttpClient.POST(ctx, fmt.Sprintf("%s/get_preimage", c.preimageMakerEndpoint.Get()), request)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to read preimage data")

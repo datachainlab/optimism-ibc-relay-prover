@@ -179,7 +179,7 @@ func (pr *Prover) SetupHeadersForUpdate(ctx context.Context, counterparty core.F
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to get sync committees from trusted to latest: deterministic=%d, latest=%d", claimedDeterministicL1.ConsensusUpdate.FinalizedHeader.Slot, latestL1.ConsensusUpdate.FinalizedHeader.Slot)
 		}
-		preimage, err := pr.l2Client.GetPreimages(ctx, metadata)
+		preimage, err := pr.l2Client.GetPreimage(ctx, metadata)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to get preimages: claimed=%d ", claimedOutput.BlockRef.Number)
 		}
