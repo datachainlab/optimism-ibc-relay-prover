@@ -3,16 +3,20 @@ package l1
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
+	"time"
+
 	"github.com/cockroachdb/errors"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l1/beacon"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/types"
 	lctypes "github.com/datachainlab/optimism-ibc-relay-prover/module/types"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/util"
+	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/hyperledger-labs/yui-relayer/log"
-	"time"
 )
 
 type InitialState struct {
@@ -25,10 +29,12 @@ type InitialState struct {
 }
 
 type L1Client struct {
-	beaconClient    beacon.Client
-	executionClient *ethclient.Client
-	config          *ProverConfig
-	logger          *log.RelayLogger
+	beaconClient            beacon.Client
+	executionClient         *ethclient.Client
+	preimageMakerHttpClient *util.HTTPClient
+	preimageMakerEndpoint   *util.Selector[string]
+	config                  *ProverConfig
+	logger                  *log.RelayLogger
 }
 
 func (pr *L1Client) BuildL1Config(state *InitialState, maxClockDrift, trustingPeriod time.Duration) (*types.L1Config, error) {
@@ -53,20 +59,31 @@ func (pr *L1Client) GetLatestETHHeader(ctx context.Context) (*ethtypes.Header, e
 	return pr.executionClient.HeaderByNumber(ctx, nil)
 }
 
-func (pr *L1Client) GetLatestFinalizedL1Header(ctx context.Context) (*types.L1Header, error) {
-	res, err := pr.beaconClient.GetLightClientFinalityUpdate(ctx)
-	if err != nil {
-		return nil, errors.WithStack(err)
+func (pr *L1Client) GetFinalizedL1Header(ctx context.Context, l1HeadHash common.Hash) (*types.L1Header, error) {
+
+	// Get finalized L1 header from optimism-preimage-maker
+	type Request struct {
+		L1HeadHash common.Hash `json:"l1_head_hash"`
 	}
+	request := &Request{L1HeadHash: l1HeadHash}
+	rawResponse, err := pr.preimageMakerHttpClient.POST(ctx, fmt.Sprintf("%s/get_finalized_l1", pr.preimageMakerEndpoint.Get()), request)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get finalized L1 header from preimage maker")
+	}
+	var res beacon.LightClientFinalityUpdateResponse
+	if err = json.Unmarshal(rawResponse, &res); err != nil {
+		return nil, errors.Wrap(err, "failed to unmarshal")
+	}
+
 	lcUpdate := res.Data.ToProto()
 	executionHeader := &res.Data.FinalizedHeader.Execution
 	executionUpdate, err := pr.buildExecutionUpdate(executionHeader)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build execution update: %v", err)
+		return nil, errors.Wrap(err, "failed to build execution update")
 	}
 	executionRoot, err := executionHeader.HashTreeRoot()
 	if err != nil {
-		return nil, fmt.Errorf("failed to calculate execution root: %v", err)
+		return nil, errors.Wrap(err, "failed to calculate execution root")
 	}
 	if !bytes.Equal(executionRoot[:], lcUpdate.FinalizedExecutionRoot) {
 		return nil, fmt.Errorf("execution root mismatch: %X != %X", executionRoot, lcUpdate.FinalizedExecutionRoot)
@@ -82,27 +99,27 @@ func (pr *L1Client) BuildInitialState(ctx context.Context, blockNumber uint64) (
 
 	timestamp, err := pr.TimestampAt(ctx, blockNumber)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "failed to get timestamp at blockNumber=%d", blockNumber)
 	}
 	slot, err := pr.getSlotAtTimestamp(ctx, timestamp)
 	if err != nil {
-		return nil, fmt.Errorf("failed to compute slot at timestamp: %v", err)
+		return nil, errors.Wrapf(err, "failed to get slot at timestamp=%d", timestamp)
 	}
 	period := pr.computeSyncCommitteePeriod(pr.computeEpoch(slot))
 
 	currentSyncCommittee, err := pr.getBootstrapInPeriod(ctx, period)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get bootstrap in period %v: %v", period, err)
+		return nil, errors.Wrapf(err, "failed to get bootstrap in period %v", period)
 	}
 	res2, err := pr.beaconClient.GetLightClientUpdate(ctx, period)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get LightClientUpdate: period=%v %v", period, err)
+		return nil, errors.Wrapf(err, "failed to get LightClientUpdate: period=%v", period)
 	}
 	nextSyncCommittee := res2.Data.ToProto().NextSyncCommittee
 
 	genesis, err := pr.beaconClient.GetGenesis(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get genesis: %v", err)
+		return nil, errors.Wrapf(err, "failed to get genesis")
 	}
 
 	return &InitialState{
@@ -118,41 +135,33 @@ func (pr *L1Client) BuildInitialState(ctx context.Context, blockNumber uint64) (
 func (pr *L1Client) GetConsensusHeaderByBlockNumber(ctx context.Context, blockNumber uint64) (*types.L1Header, error) {
 	timestamp, err := pr.TimestampAt(ctx, blockNumber)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "failed to get timestamp at blockNumber=%d", blockNumber)
 	}
 	slot, err := pr.getSlotAtTimestamp(ctx, timestamp)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "failed to get slot at timestamp=%d", timestamp)
 	}
 	period := pr.computeSyncCommitteePeriod(pr.computeEpoch(slot))
 	res, err := pr.BuildNextSyncCommitteeUpdate(ctx, period, nil)
 	return res, err
 }
 
-func (pr *L1Client) GetSyncCommitteesFromTrustedToLatest(ctx context.Context, trustedBlockNumber uint64, lfh *types.L1Header) ([]*types.L1Header, error) {
-	timestamp, err := pr.TimestampAt(ctx, trustedBlockNumber)
-	if err != nil {
-		return nil, err
-	}
-	slot, err := pr.getSlotAtTimestamp(ctx, timestamp)
-	if err != nil {
-		return nil, err
-	}
-	statePeriod := pr.computeSyncCommitteePeriod(pr.computeEpoch(slot))
+func (pr *L1Client) GetSyncCommitteesFromTrustedToLatest(ctx context.Context, trusted *types.L1Header, lfh *types.L1Header) ([]*types.L1Header, error) {
+	statePeriod := pr.computeSyncCommitteePeriod(pr.computeEpoch(trusted.ConsensusUpdate.SignatureSlot))
 	latestPeriod := pr.computeSyncCommitteePeriod(pr.computeEpoch(lfh.ConsensusUpdate.SignatureSlot))
 	pr.logger.DebugContext(ctx, "GetSyncCommitteesFromTrustedToLatest", "statePeriod", statePeriod, "latestPeriod", latestPeriod)
 	res, err := pr.beaconClient.GetLightClientUpdate(ctx, statePeriod)
 	if err != nil {
-		return nil, errors.WithStack(err)
+		return nil, errors.Wrapf(err, "failed to get LightClientUpdate: state_period=%v", statePeriod)
 	}
 	if statePeriod == latestPeriod {
 		root, err := res.Data.FinalizedHeader.Beacon.HashTreeRoot()
 		if err != nil {
-			return nil, errors.WithStack(err)
+			return nil, errors.Wrap(err, "failed to calculate root")
 		}
 		bootstrapRes, err := pr.beaconClient.GetBootstrap(ctx, root[:])
 		if err != nil {
-			return nil, errors.WithStack(err)
+			return nil, errors.Wrap(err, "failed to get bootstrap")
 		}
 		lfh.TrustedSyncCommittee = &lctypes.TrustedSyncCommittee{
 			SyncCommittee: bootstrapRes.Data.CurrentSyncCommittee.ToProto(),
@@ -172,13 +181,13 @@ func (pr *L1Client) GetSyncCommitteesFromTrustedToLatest(ctx context.Context, tr
 	)
 	res, err = pr.beaconClient.GetLightClientUpdate(ctx, statePeriod)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get LightClientUpdate: state_period=%v %v", statePeriod, err)
+		return nil, errors.Wrapf(err, "failed to get LightClientUpdate: state_period=%v", statePeriod)
 	}
 	trustedNextSyncCommittee = res.Data.ToProto().NextSyncCommittee
 	for p := statePeriod + 1; p <= latestPeriod; p++ {
 		header, err := pr.BuildNextSyncCommitteeUpdate(ctx, p, trustedNextSyncCommittee)
 		if err != nil {
-			return nil, fmt.Errorf("failed to build next sync committee update for next: period=%v %v", p, err)
+			return nil, errors.Wrapf(err, "failed to build next sync committee update: period=%v", p)
 		}
 		trustedCurrentSyncCommittee = trustedNextSyncCommittee
 		trustedNextSyncCommittee = header.ConsensusUpdate.NextSyncCommittee
@@ -194,7 +203,7 @@ func (pr *L1Client) GetSyncCommitteesFromTrustedToLatest(ctx context.Context, tr
 func (pr *L1Client) TimestampAt(ctx context.Context, number uint64) (uint64, error) {
 	header, err := pr.executionClient.HeaderByNumber(ctx, util.NewBigInt(number))
 	if err != nil {
-		return 0, errors.WithStack(err)
+		return 0, errors.Wrapf(err, "failed to get block from number: number=%d", number)
 	}
 	return header.Time, nil
 }
@@ -230,11 +239,11 @@ func (pr *L1Client) BuildNextSyncCommitteeUpdate(ctx context.Context, period uin
 	executionHeader := &res.Data.FinalizedHeader.Execution
 	executionUpdate, err := pr.buildExecutionUpdate(executionHeader)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build execution update: %v", err)
+		return nil, errors.Wrap(err, "failed to build execution update")
 	}
 	executionRoot, err := executionHeader.HashTreeRoot()
 	if err != nil {
-		return nil, fmt.Errorf("failed to calculate execution root: %v", err)
+		return nil, errors.Wrap(err, "failed to calculate execution root")
 	}
 	if !bytes.Equal(executionRoot[:], lcUpdate.FinalizedExecutionRoot) {
 		return nil, fmt.Errorf("execution root mismatch: %X != %X", executionRoot, lcUpdate.FinalizedExecutionRoot)
@@ -251,7 +260,10 @@ func (pr *L1Client) BuildNextSyncCommitteeUpdate(ctx context.Context, period uin
 	}, nil
 }
 
-func NewL1Client(ctx context.Context, l1BeaconEndpoint, l1ExecutionEndpoint string, minimalForkSched map[string]uint64, logger *log.RelayLogger) (*L1Client, error) {
+func NewL1Client(ctx context.Context, l1BeaconEndpoint, l1ExecutionEndpoint string,
+	preimageMakerTimeout time.Duration,
+	preimageMakerEndpoint string,
+	minimalForkSched map[string]uint64, logger *log.RelayLogger) (*L1Client, error) {
 	beaconClient := beacon.NewClient(l1BeaconEndpoint)
 	executionClient, err := ethclient.DialContext(ctx, l1ExecutionEndpoint)
 	if err != nil {
@@ -270,8 +282,10 @@ func NewL1Client(ctx context.Context, l1BeaconEndpoint, l1ExecutionEndpoint stri
 	}
 
 	return &L1Client{
-		beaconClient:    beaconClient,
-		executionClient: executionClient,
+		beaconClient:            beaconClient,
+		executionClient:         executionClient,
+		preimageMakerHttpClient: util.NewHTTPClient(preimageMakerTimeout),
+		preimageMakerEndpoint:   util.NewSelector(strings.Split(preimageMakerEndpoint, ",")),
 		config: &ProverConfig{
 			Network:          network,
 			MinimalForkSched: minimalForkSched,

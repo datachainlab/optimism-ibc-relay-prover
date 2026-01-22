@@ -4,9 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/big"
+	"os"
+	"time"
+
 	"github.com/cockroachdb/errors"
 	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/client"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l1"
+	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l2"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/types"
 	bindings2 "github.com/ethereum-optimism/optimism/op-e2e/bindings"
 	"github.com/ethereum-optimism/optimism/op-node/bindings"
@@ -15,8 +20,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/hyperledger-labs/yui-relayer/log"
-	"math/big"
-	"os"
 )
 
 type HostPort struct {
@@ -27,6 +30,7 @@ type HostPort struct {
 
 type Config struct {
 	ProverL1Client            *l1.L1Client
+	ProverL2Client            *l2.L2Client
 	L1Client                  *ethclient.Client
 	L2Client                  *ethclient.Client
 	DisputeGameFactoryCaller  *bindings.DisputeGameFactoryCaller
@@ -57,18 +61,27 @@ func NewConfig(ctx context.Context) (*Config, error) {
 	proverL1Client, err := l1.NewL1Client(ctx,
 		fmt.Sprintf("http://localhost:%d", hostPort.L1BeaconPort),
 		executionNode,
+		10*time.Second,
+		"http://localhost:10080",
 		nil,
 		log.GetLogger().WithModule("l1"),
 	)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
+	proverL2Client := l2.NewL2Client(nil, 10*time.Second,
+		10*time.Second,
+		"http://localhost:10080",
+		"",
+		log.GetLogger().WithModule("l2"),
+	)
 	disputeGameFactoryCaller, err := bindings.NewDisputeGameFactoryCaller(disputeGameFactoryProxyAddr, l1Client)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
 	config := &Config{
 		ProverL1Client:            proverL1Client,
+		ProverL2Client:            proverL2Client,
 		L1Client:                  l1Client,
 		L2Client:                  l2Client,
 		DisputeGameFactoryCaller:  disputeGameFactoryCaller,

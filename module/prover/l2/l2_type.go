@@ -1,9 +1,10 @@
 package l2
 
 import (
+	"reflect"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"reflect"
 )
 
 // https://github.com/ethereum-optimism/optimism/blob/v1.13.1/op-service/eth/sync_status.go
@@ -61,11 +62,6 @@ type L2BlockRef struct {
 	SequenceNumber uint64      `json:"sequenceNumber"` // distance to first block of epoch
 }
 
-// L1 number for derivation needs to be decided deterministically.
-func (b *L2BlockRef) DeterministicFinalizedL1() uint64 {
-	return b.L1Origin.Number
-}
-
 type BlockID struct {
 	Hash   common.Hash `json:"hash"`
 	Number uint64      `json:"number"`
@@ -84,4 +80,14 @@ type Bytes32 [32]byte
 
 func (b *Bytes32) UnmarshalJSON(text []byte) error {
 	return hexutil.UnmarshalFixedJSON(reflect.TypeOf(b), text, b[:])
+}
+
+// PreimageMetadata contains metadata about a preimage
+type PreimageMetadata struct {
+	// Agreed l2 block number
+	Agreed uint64 `json:"agreed"`
+	// Claimed l2 block number
+	Claimed uint64 `json:"claimed"`
+	// L1 head hash for derivation
+	L1Head common.Hash `json:"l1_head"`
 }

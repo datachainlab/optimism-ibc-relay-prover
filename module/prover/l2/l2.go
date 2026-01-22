@@ -1,24 +1,21 @@
 package l2
 
 import (
-	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math/big"
+	"strings"
+	"time"
+
 	"github.com/cockroachdb/errors"
 	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/relay/ethereum"
 	lctypes "github.com/datachainlab/optimism-ibc-relay-prover/module/types"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/hyperledger-labs/yui-relayer/log"
-	"io"
-	"math/big"
-	"net/http"
-	"strings"
-	"time"
 )
 
 var IBCCommitmentsSlot = common.HexToHash("1ee222554989dda120e26ecacf756fe1235cd8d726706b57517715dde4f0c900")
@@ -36,72 +33,67 @@ type DerivationL2Attribute struct {
 
 type L2Client struct {
 	*ethereum.Chain
-	l1ExecutionClient     *ethclient.Client
-	opNodeTimeout         time.Duration
-	preimageMakerTimeout  time.Duration
-	preimageMakerEndpoint *util.Selector[string]
-	opNodeEndpoint        string
-	logger                *log.RelayLogger
+	opNodeTimeout           time.Duration
+	preimageMakerHttpClient *util.HTTPClient
+	preimageMakerEndpoint   *util.Selector[string]
+	opNodeEndpoint          string
+	logger                  *log.RelayLogger
 }
 
 func NewL2Client(chain *ethereum.Chain,
-	l1ExecutionEndpoint string,
 	opNodeTimeout time.Duration,
 	preimageMakerTimeout time.Duration,
 	preimageMakerEndpoint string,
 	opNodeEndpoint string,
 	logger *log.RelayLogger,
 ) *L2Client {
-	l1ExecutionClient, err := ethclient.Dial(l1ExecutionEndpoint)
-	if err != nil {
-		panic(err)
-	}
 	return &L2Client{
-		Chain:                 chain,
-		l1ExecutionClient:     l1ExecutionClient,
-		opNodeTimeout:         opNodeTimeout,
-		preimageMakerTimeout:  preimageMakerTimeout,
-		preimageMakerEndpoint: util.NewSelector(strings.Split(preimageMakerEndpoint, ",")),
-		opNodeEndpoint:        opNodeEndpoint,
-		logger:                logger,
+		Chain:                   chain,
+		opNodeTimeout:           opNodeTimeout,
+		preimageMakerHttpClient: util.NewHTTPClient(preimageMakerTimeout),
+		preimageMakerEndpoint:   util.NewSelector(strings.Split(preimageMakerEndpoint, ",")),
+		opNodeEndpoint:          opNodeEndpoint,
+		logger:                  logger,
 	}
 }
 
-type PreimageRequest struct {
-	L1HeadHash         common.Hash `json:"l1_head_hash"`
-	AgreedL2HeadHash   common.Hash `json:"agreed_l2_head_hash"`
-	AgreedL2OutputRoot common.Hash `json:"agreed_l2_output_root"`
-	L2OutputRoot       common.Hash `json:"l2_output_root"`
-	L2BlockNumber      uint64      `json:"l2_block_number"`
+func (c *L2Client) GetLatestPreimageMetadata(ctx context.Context) (*PreimageMetadata, error) {
+	response, err := c.preimageMakerHttpClient.POST(ctx, fmt.Sprintf("%s/get_latest_metadata", c.preimageMakerEndpoint.Get()), nil)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get latest preimage metadata")
+	}
+	var metadata *PreimageMetadata
+	if err = json.Unmarshal(response, &metadata); err != nil {
+		return nil, errors.Wrap(err, "failed to unmarshal latest preimage metadata")
+	}
+	return metadata, nil
 }
 
-// CreatePreimages sends a list of derivations to the preimage maker service and returns the preimage data.
-// It marshals the derivations into JSON, sends a POST request to the preimage maker endpoint, and reads the response.
-func (c *L2Client) CreatePreimages(ctx context.Context, request *PreimageRequest) ([]byte, error) {
-	httpClient := http.Client{
-		Timeout: c.preimageMakerTimeout,
+// ListPreimageMetadata returns preimage metadata list between trustedHeight and latestHeight.
+// sorted ascending by claimed height.
+func (c *L2Client) ListPreimageMetadata(ctx context.Context, trustedHeight uint64, latestHeight uint64) ([]*PreimageMetadata, error) {
+	type Request struct {
+		LtClaimed uint64 `json:"lt_claimed"`
+		GtClaimed uint64 `json:"gt_claimed"`
+	}
+	request := &Request{
+		LtClaimed: latestHeight + 1,
+		GtClaimed: trustedHeight,
+	}
+	response, err := c.preimageMakerHttpClient.POST(ctx, fmt.Sprintf("%s/list_metadata", c.preimageMakerEndpoint.Get()), request)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to list preimage data")
 	}
 
-	body, err := json.Marshal(request)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to marshal preimage request")
+	var preimageDataList []*PreimageMetadata
+	if err = json.Unmarshal(response, &preimageDataList); err != nil {
+		return nil, errors.Wrap(err, "failed to unmarshal preimage data")
 	}
-	buffer := bytes.NewBuffer(body)
+	return preimageDataList, nil
+}
 
-	httpRequest, err := http.NewRequestWithContext(ctx, "POST", fmt.Sprintf("%s/derivation", c.preimageMakerEndpoint.Get()), buffer)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to call preimage request")
-	}
-	httpRequest.Header.Set("Content-Type", "application/json")
-	response, err := httpClient.Do(httpRequest)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to make preimage request")
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		return nil, errors.Errorf("failed to create preimages: status=%d", response.StatusCode)
-	}
-	preimageData, err := io.ReadAll(response.Body)
+func (c *L2Client) GetPreimage(ctx context.Context, request *PreimageMetadata) ([]byte, error) {
+	preimageData, err := c.preimageMakerHttpClient.POST(ctx, fmt.Sprintf("%s/get_preimage", c.preimageMakerEndpoint.Get()), request)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to read preimage data")
 	}
