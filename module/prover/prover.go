@@ -207,11 +207,14 @@ func (pr *Prover) CheckRefreshRequired(ctx context.Context, counterparty core.Ch
 	}
 
 	// Get trusted 1 timestamp
-	trustedL1Header, _, err := pr.getDeterministicL1Header(ctx, cs.GetLatestHeight().GetRevisionHeight())
+	l2Output, err := pr.l2Client.OutputAtBlock(ctx, cs.GetLatestHeight().GetRevisionHeight())
 	if err != nil {
-		return false, errors.Wrapf(err, "failed to get deterministic l1 header")
+		return false, errors.Wrapf(err, "failed to get output at block: l2Number=%d", cs.GetLatestHeight().GetRevisionHeight())
 	}
-	l1HeaderTimestamp := trustedL1Header.Timestamp
+	l1HeaderTimestamp, err := pr.l1Client.TimestampAt(ctx, l2Output.BlockRef.L1Origin.Number)
+	if err != nil {
+		return false, errors.Wrapf(err, "failed to get l1 timestamp at: l1Number=%d", l2Output.BlockRef.L1Origin.Number)
+	}
 	lcLastTimestamp := time.Unix(int64(l1HeaderTimestamp), 0)
 
 	// Get latest l1 timestamp on chain
