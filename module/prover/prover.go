@@ -11,6 +11,7 @@ import (
 	"github.com/cosmos/ibc-go/v8/modules/core/exported"
 	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/relay/ethereum"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l1"
+	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l1/beacon"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l2"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/types"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/util"
@@ -69,13 +70,13 @@ func (pr *Prover) GetLatestFinalizedHeader(ctx context.Context) (latestFinalized
 	pr.GetLogger().InfoContext(ctx, "GetLatestFinalizedHeader", "claimed_l2", preimageMetadata.Claimed, "agreed_l2", preimageMetadata.Agreed, "latest_l1", preimageMetadata.L1Head)
 
 	// Find L1 where preimages are created.
-	latestL1Header, err := pr.l1Client.GetFinalizedL1Header(ctx, preimageMetadata.L1Head)
+	latestL1Header, latestLcUpdate, latestPeriod, err := pr.l1Client.GetFinalizedL1Header(ctx, preimageMetadata.L1Head)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to get finalized L1 header: number=%d", preimageMetadata.L1Head)
 	}
 
 	// Find L2 where L1 is deterministic.
-	deterministicL1Header, l2Output, err := pr.getDeterministicL1Header(ctx, preimageMetadata.Claimed)
+	deterministicL1Header, l2Output, err := pr.getDeterministicL1Header(ctx, preimageMetadata.Claimed, latestL1Header, latestLcUpdate, latestPeriod)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to get deterministic L1 header: number=%d", preimageMetadata.Claimed)
 	}
@@ -134,20 +135,20 @@ func (pr *Prover) SetupHeadersForUpdate(ctx context.Context, counterparty core.F
 
 	return pr.makeHeaderChan(ctx, preimageMetadataList, func(ctx context.Context, metadata *l2.PreimageMetadata) (core.Header, error) {
 
-		// Get deterministic L1
-		agreedDeterministicL1, agreedOutput, err := pr.getDeterministicL1Header(ctx, metadata.Agreed)
+		// Get the latest finalized L1 that created preimages (must be fetched first to pass to getDeterministicL1Header)
+		latestL1, latestLcUpdateSnapshot, latestPeriod, err := pr.l1Client.GetFinalizedL1Header(ctx, metadata.L1Head)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to get latest l1 header: l1Number=%s", metadata.L1Head.String())
+		}
+
+		// Get deterministic L1 (pass latestL1 to ensure consistency when same period)
+		agreedDeterministicL1, agreedOutput, err := pr.getDeterministicL1Header(ctx, metadata.Agreed, latestL1, latestLcUpdateSnapshot, latestPeriod)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to get deterministic l1 header: agreed l2Number=%d", metadata.Agreed)
 		}
-		claimedDeterministicL1, claimedOutput, err := pr.getDeterministicL1Header(ctx, metadata.Claimed)
+		claimedDeterministicL1, claimedOutput, err := pr.getDeterministicL1Header(ctx, metadata.Claimed, latestL1, latestLcUpdateSnapshot, latestPeriod)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to get deterministic l1 header: claimed l2Number=%d", metadata.Claimed)
-		}
-
-		// Get the latest finalized L1 that created preimages
-		latestL1, err := pr.l1Client.GetFinalizedL1Header(ctx, metadata.L1Head)
-		if err != nil {
-			return nil, errors.Wrapf(err, "failed to get latest l1 header: l1Number=%s", metadata.L1Head.String())
 		}
 
 		pr.GetLogger().InfoContext(ctx, "header chunk",
@@ -244,7 +245,7 @@ func (pr *Prover) CreateInitialLightClientState(ctx context.Context, height expo
 	var l1Origin uint64
 	if height != nil {
 		l2Number = height.GetRevisionHeight()
-		l1Header, trustedOutput, err := pr.getDeterministicL1Header(ctx, l2Number)
+		l1Header, trustedOutput, err := pr.getDeterministicL1Header(ctx, l2Number, nil, nil, 0)
 		if err != nil {
 			return nil, nil, errors.Wrapf(err, "failed to get deterministic l1 header: l2Number=%d", l2Number)
 		}
@@ -345,12 +346,20 @@ func (pr *Prover) SetupForRelay(ctx context.Context) error {
 }
 
 // getDeterministicL1Header retrieves a deterministic L1 header and its associated L2 output response for a given L2 block number.
-func (pr *Prover) getDeterministicL1Header(ctx context.Context, l2Number uint64) (*types.L1Header, *l2.OutputResponse, error) {
+// If latestL1/latestLcUpdate/latestPeriod are provided and the deterministic L1 is in the same period with slot exceeding,
+// it uses latestLcUpdate to ensure data consistency with preimage-maker.
+func (pr *Prover) getDeterministicL1Header(
+	ctx context.Context,
+	l2Number uint64,
+	latestL1 *types.L1Header,
+	latestLcUpdateSnapshot *beacon.LightClientUpdateData,
+	latestPeriod uint64,
+) (*types.L1Header, *l2.OutputResponse, error) {
 	l2Output, err := pr.l2Client.OutputAtBlock(ctx, l2Number)
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "failed to get output at block: l2Number=%d", l2Number)
 	}
-	l1Header, err := pr.l1Client.GetConsensusHeaderByBlockNumber(ctx, l2Output.BlockRef.L1Origin.Number)
+	l1Header, err := pr.l1Client.GetSyncCommitteeByBlockNumber(ctx, l2Output.BlockRef.L1Origin.Number, latestL1, latestLcUpdateSnapshot, latestPeriod)
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "failed to get l1 consensus: l1Number=%d", l2Output.BlockRef.L1Origin.Number)
 	}

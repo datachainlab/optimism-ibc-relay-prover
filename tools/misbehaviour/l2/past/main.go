@@ -54,7 +54,7 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return errors.WithStack(err)
 	}
-	l1Header, err := config.ProverL1Client.GetFinalizedL1Header(ctx, latestMetadata.L1Head)
+	l1Header, _, _, err := config.ProverL1Client.GetFinalizedL1Header(ctx, latestMetadata.L1Head)
 	if err != nil {
 		return errors.WithStack(err)
 	}

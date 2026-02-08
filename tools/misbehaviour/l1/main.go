@@ -64,11 +64,11 @@ func run(ctx context.Context) error {
 		return errors.WithStack(err)
 	}
 
-	l1Header1, err := proverL1Client.GetFinalizedL1Header(ctx, latestMetadata.L1Head)
+	l1Header1, _, _, err := proverL1Client.GetFinalizedL1Header(ctx, latestMetadata.L1Head)
 	if err != nil {
 		return errors.WithStack(err)
 	}
-	l1Header2, err := proverL1Client.GetFinalizedL1Header(ctx, latestMetadata.L1Head)
+	l1Header2, _, _, err := proverL1Client.GetFinalizedL1Header(ctx, latestMetadata.L1Head)
 	if err != nil {
 		return errors.WithStack(err)
 	}
