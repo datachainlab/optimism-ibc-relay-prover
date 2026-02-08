@@ -233,7 +233,7 @@ func (pr *Prover) CheckRefreshRequired(ctx context.Context, counterparty core.Ch
 	}
 	needsRefresh := elapsedTime > durationMulByFraction(pr.trustingPeriod, pr.refreshThresholdRate)
 
-	pr.GetLogger().DebugContext(ctx, "CheckRefreshRequired", "needsRefresh", needsRefresh, "selfTimestamp", selfTimestamp, "lcLastTimestamp", lcLastTimestamp)
+	pr.GetLogger().InfoContext(ctx, "CheckRefreshRequired", "needsRefresh", needsRefresh, "selfTimestamp", selfTimestamp, "lcLastTimestamp", lcLastTimestamp)
 
 	return needsRefresh, nil
 }
