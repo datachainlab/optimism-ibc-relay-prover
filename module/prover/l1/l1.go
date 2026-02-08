@@ -77,22 +77,11 @@ func (pr *L1Client) GetFinalizedL1Header(ctx context.Context, l1HeadHash common.
 		return nil, nil, 0, errors.Wrap(err, "failed to unmarshal FinalizedL1DataResponse")
 	}
 
-	// Parse finality_update
-	var finalityUpdateRes beacon.LightClientFinalityUpdateResponse
-	if err = json.Unmarshal(finalizedL1Data.RawFinalityUpdate, &finalityUpdateRes); err != nil {
-		return nil, nil, 0, errors.Wrap(err, "failed to unmarshal finality update")
-	}
-
-	// Parse light_client_update (single object extracted by preimage-maker from Beacon API array)
-	var lcUpdateSnapshotResponse beacon.LightClientUpdateResponse
-	if err = json.Unmarshal(finalizedL1Data.RawLightClientUpdate, &lcUpdateSnapshotResponse); err != nil {
-		return nil, nil, 0, errors.Wrap(err, "failed to unmarshal light client update")
-	}
-	lcUpdateSnapshot := &lcUpdateSnapshotResponse.Data
+	lcUpdateSnapshot := &finalizedL1Data.LightClientUpdate.Data
 
 	// Build L1Header from finality_update
-	lcUpdate := finalityUpdateRes.Data.ToProto()
-	executionHeader := &finalityUpdateRes.Data.FinalizedHeader.Execution
+	lcUpdate := finalizedL1Data.FinalityUpdate.Data.ToProto()
+	executionHeader := &finalizedL1Data.FinalityUpdate.Data.FinalizedHeader.Execution
 	executionUpdate, err := pr.buildExecutionUpdate(executionHeader)
 	if err != nil {
 		return nil, nil, 0, errors.Wrap(err, "failed to build execution update")
