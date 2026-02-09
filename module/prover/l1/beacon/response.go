@@ -141,4 +141,5 @@ type SyncCommittee struct {
 type FinalizedL1DataResponse struct {
 	FinalityUpdate    LightClientFinalityUpdateResponse `json:"raw_finality_update"`
 	LightClientUpdate LightClientUpdateResponse         `json:"raw_light_client_update"`
+	Period            uint64                            `json:"period"`
 }
