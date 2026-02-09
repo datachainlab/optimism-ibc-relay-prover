@@ -116,9 +116,10 @@ func (ts *ProverTestSuite) TestGetLatestFinalizedHeader() {
 	header, err := ts.prover.GetLatestFinalizedHeader(context.Background())
 	ts.Require().NoError(err)
 	h := header.(*types.Header)
-	ts.Require().Len(h.TrustedToDeterministic, 0)
-	ts.Require().True(len(h.DeterministicToLatest) >= 1)
 	ts.Require().True(h.Derivation.L2BlockNumber > 0)
+	output, err := ts.prover.l2Client.OutputAtBlock(context.Background(), h.Derivation.L2BlockNumber)
+	ts.Require().NoError(err)
+	ts.Require().Equal(h.Derivation.L2OutputRoot, output.OutputRoot[:])
 }
 
 func (ts *ProverTestSuite) TestSetupHeadersForUpdateMultiRange() {
@@ -135,14 +136,14 @@ func (ts *ProverTestSuite) TestSetupHeadersForUpdateLatest() {
 func (ts *ProverTestSuite) TestCheckRefreshRequired() {
 
 	ctx := context.Background()
-	syncStatus, err := ts.prover.l2Client.SyncStatus(ctx)
+	latestMetadata, err := ts.prover.l2Client.GetLatestPreimageMetadata(ctx)
 	ts.Require().NoError(err)
-	_, trustedL1Header, _, err := ts.prover.getDeterministicPeriod(ctx, syncStatus.FinalizedL2.Number)
+	latestTimestamp, err := ts.prover.l2Client.TimestampAt(ctx, latestMetadata.Claimed)
 	ts.Require().NoError(err)
-	latest, err := ts.prover.l1Client.GetLatestETHHeader(ctx)
+	trustedTimestamp, err := ts.prover.l2Client.TimestampAt(ctx, latestMetadata.Agreed)
 	ts.Require().NoError(err)
 
-	ts.prover.trustingPeriod = time.Duration(latest.Time-trustedL1Header.Timestamp)*time.Second + 7
+	ts.prover.trustingPeriod = time.Duration(latestTimestamp-trustedTimestamp) * time.Second
 	ts.prover.refreshThresholdRate = &types.Fraction{
 		Numerator:   1,
 		Denominator: 1,
@@ -158,7 +159,7 @@ func (ts *ProverTestSuite) TestCheckRefreshRequired() {
 
 	// Not refresh because within threshold
 	protoClientState, err := codectypes.NewAnyWithValue(exported.ClientState(&types.ClientState{
-		LatestHeight: util.NewHeight(syncStatus.FinalizedL2.Number),
+		LatestHeight: util.NewHeight(latestMetadata.Agreed),
 	}).(proto.Message))
 	ts.Require().NoError(err)
 	chain.mockClientState.ClientState = protoClientState
@@ -169,7 +170,7 @@ func (ts *ProverTestSuite) TestCheckRefreshRequired() {
 
 	// should refresh by block difference
 	protoClientState, err = codectypes.NewAnyWithValue(exported.ClientState(&types.ClientState{
-		LatestHeight: util.NewHeight(syncStatus.FinalizedL2.Number - 200),
+		LatestHeight: util.NewHeight(latestMetadata.Agreed - 1),
 	}).(proto.Message))
 	ts.Require().NoError(err)
 	chain.mockClientState.ClientState = protoClientState

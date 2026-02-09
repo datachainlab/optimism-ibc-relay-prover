@@ -196,11 +196,11 @@ func (pr *Prover) CheckRefreshRequired(ctx context.Context, counterparty core.Ch
 	}
 
 	// Get trusted l2 timestamp
-	consensusL2Timestamp, err := pr.l2Client.TimestampAt(ctx, cs.GetLatestHeight().GetRevisionHeight())
+	lcLastL2Timestamp, err := pr.l2Client.TimestampAt(ctx, cs.GetLatestHeight().GetRevisionHeight())
 	if err != nil {
 		return false, errors.Wrapf(err, "failed to get output at block: l2Number=%d", cs.GetLatestHeight().GetRevisionHeight())
 	}
-	lcLastTimestamp := time.Unix(int64(consensusL2Timestamp), 0)
+	lcLastTimestamp := time.Unix(int64(lcLastL2Timestamp), 0)
 
 	// Get latest l2 timestamp
 	latestPreimageMetadata, err := pr.l2Client.GetLatestPreimageMetadata(ctx)
