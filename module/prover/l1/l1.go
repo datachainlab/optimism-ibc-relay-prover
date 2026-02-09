@@ -101,7 +101,7 @@ func (pr *L1Client) GetFinalizedL1Header(ctx context.Context, l1HeadHash common.
 }
 
 func (pr *L1Client) BuildInitialState(ctx context.Context, blockNumber uint64) (*InitialState, error) {
-	period, slot, timestamp, err := pr.GetPreviousPeriodByBlockNumber(ctx, blockNumber)
+	period, err := pr.GetPreviousPeriodByBlockNumber(ctx, blockNumber)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to get period by blockNumber=%d", blockNumber)
 	}
@@ -109,11 +109,11 @@ func (pr *L1Client) BuildInitialState(ctx context.Context, blockNumber uint64) (
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to get bootstrap in period %v", period)
 	}
-	res2, err := pr.beaconClient.GetLightClientUpdate(ctx, period)
+	res, err := pr.beaconClient.GetLightClientUpdate(ctx, period)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to get LightClientUpdate: period=%v", period)
 	}
-	nextSyncCommittee := res2.Data.ToProto().NextSyncCommittee
+	nextSyncCommittee := res.Data.ToProto().NextSyncCommittee
 
 	genesis, err := pr.beaconClient.GetGenesis(ctx)
 	if err != nil {
@@ -122,16 +122,16 @@ func (pr *L1Client) BuildInitialState(ctx context.Context, blockNumber uint64) (
 
 	return &InitialState{
 		Genesis:              *genesis,
-		Slot:                 slot,
+		Slot:                 uint64(res.Data.FinalizedHeader.Beacon.Slot),
 		Period:               period,
 		CurrentSyncCommittee: *currentSyncCommittee,
 		NextSyncCommittee:    *nextSyncCommittee,
-		Timestamp:            timestamp,
+		Timestamp:            res.Data.FinalizedHeader.Execution.Timestamp,
 	}, nil
 }
 
 func (pr *L1Client) GetPeriodAndNextSyncCommitteeUpdateByBlockNumber(ctx context.Context, blockNumber uint64) (uint64, *types.L1Header, error) {
-	period, _, _, err := pr.GetPreviousPeriodByBlockNumber(ctx, blockNumber)
+	period, err := pr.GetPreviousPeriodByBlockNumber(ctx, blockNumber)
 	if err != nil {
 		return 0, nil, errors.Wrapf(err, "failed to get period by blockNumber=%d", blockNumber)
 	}
@@ -139,20 +139,20 @@ func (pr *L1Client) GetPeriodAndNextSyncCommitteeUpdateByBlockNumber(ctx context
 	return period, res, err
 }
 
-func (pr *L1Client) GetPreviousPeriodByBlockNumber(ctx context.Context, blockNumber uint64) (uint64, uint64, uint64, error) {
+func (pr *L1Client) GetPreviousPeriodByBlockNumber(ctx context.Context, blockNumber uint64) (uint64, error) {
 	timestamp, err := pr.TimestampAt(ctx, blockNumber)
 	if err != nil {
-		return 0, 0, 0, errors.Wrapf(err, "failed to get timestamp at blockNumber=%d", blockNumber)
+		return 0, errors.Wrapf(err, "failed to get timestamp at blockNumber=%d", blockNumber)
 	}
 	slot, err := pr.getSlotAtTimestamp(ctx, timestamp)
 	if err != nil {
-		return 0, 0, 0, errors.Wrapf(err, "failed to get slot at timestamp=%d", timestamp)
+		return 0, errors.Wrapf(err, "failed to get slot at timestamp=%d", timestamp)
 	}
 	period := pr.computeSyncCommitteePeriod(pr.computeEpoch(slot))
 	if period > 0 {
 		period--
 	}
-	return period, slot, timestamp, nil
+	return period, nil
 }
 
 // GetSyncCommitteesFromTrustedToDeterministic returns the sync committee updates needed to transition from
