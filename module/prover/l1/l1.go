@@ -130,15 +130,6 @@ func (pr *L1Client) BuildInitialState(ctx context.Context, blockNumber uint64) (
 	}, nil
 }
 
-func (pr *L1Client) GetPeriodAndNextSyncCommitteeUpdateByBlockNumber(ctx context.Context, blockNumber uint64) (uint64, *types.L1Header, error) {
-	period, err := pr.GetPreviousPeriodByBlockNumber(ctx, blockNumber)
-	if err != nil {
-		return 0, nil, errors.Wrapf(err, "failed to get period by blockNumber=%d", blockNumber)
-	}
-	res, err := pr.buildNextSyncCommitteeUpdate(ctx, period, nil)
-	return period, res, err
-}
-
 func (pr *L1Client) GetPreviousPeriodByBlockNumber(ctx context.Context, blockNumber uint64) (uint64, error) {
 	timestamp, err := pr.TimestampAt(ctx, blockNumber)
 	if err != nil {
@@ -195,7 +186,7 @@ func (pr *L1Client) GetSyncCommitteesFromAgreedToClaimed(
 	)
 	trustedNextSyncCommittee = res.Data.ToProto().NextSyncCommittee
 	for p := agreedPeriod + 1; p <= claimedPeriod; p++ {
-		header, err := pr.buildNextSyncCommitteeUpdate(ctx, p, trustedNextSyncCommittee)
+		header, err := pr.BuildNextSyncCommitteeUpdate(ctx, p, trustedNextSyncCommittee)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to build next sync committee update: period=%v", p)
 		}
@@ -243,7 +234,7 @@ func (pr *L1Client) GetSyncCommitteesFromClaimedToLatest(
 			pr.logger.InfoContext(ctx, "using cached snapshot for sync committee update", "period", p)
 			header, err = pr.buildNextSyncCommitteeUpdateFromData(lcUpdateSnapshot, trustedNextSyncCommittee)
 		} else {
-			header, err = pr.buildNextSyncCommitteeUpdate(ctx, p, trustedNextSyncCommittee)
+			header, err = pr.BuildNextSyncCommitteeUpdate(ctx, p, trustedNextSyncCommittee)
 		}
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to build next sync committee update: period=%v", p)
@@ -289,7 +280,7 @@ func (pr *L1Client) getBootstrapInPeriod(ctx context.Context, period uint64) (*l
 	return nil, fmt.Errorf("failed to get bootstrap in period: period=%v err=%v", period, errors.Join(errs...))
 }
 
-func (pr *L1Client) buildNextSyncCommitteeUpdate(ctx context.Context, period uint64, trustedNextSyncCommittee *lctypes.SyncCommittee) (*types.L1Header, error) {
+func (pr *L1Client) BuildNextSyncCommitteeUpdate(ctx context.Context, period uint64, trustedNextSyncCommittee *lctypes.SyncCommittee) (*types.L1Header, error) {
 	res, err := pr.beaconClient.GetLightClientUpdate(ctx, period)
 	if err != nil {
 		return nil, err
