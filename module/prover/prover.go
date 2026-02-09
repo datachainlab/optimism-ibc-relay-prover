@@ -174,11 +174,11 @@ func (pr *Prover) SetupHeadersForUpdate(ctx context.Context, counterparty core.F
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to build account update: number=%d", claimedOutput.BlockRef.Number)
 		}
-		ih.TrustedToDeterministic, err = pr.l1Client.GetSyncCommitteesFromTrustedToLatest(ctx, agreedDeterministicL1, claimedDeterministicL1, nil)
+		// Use cached snapshot to ensure consistency with preimage-maker when the period matches
+		ih.TrustedToDeterministic, err = pr.l1Client.GetSyncCommitteesFromTrustedToLatest(ctx, agreedDeterministicL1, claimedDeterministicL1, latestLcUpdateSnapshot)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to get sync committees from trusted to latest: trusted=%d, deterministic=%d", agreedDeterministicL1.ConsensusUpdate.FinalizedHeader.Slot, claimedDeterministicL1.ConsensusUpdate.FinalizedHeader.Slot)
 		}
-		// Use cached snapshot for DeterministicToLatest to ensure consistency with preimage-maker
 		ih.DeterministicToLatest, err = pr.l1Client.GetSyncCommitteesFromTrustedToLatest(ctx, claimedDeterministicL1, latestL1, latestLcUpdateSnapshot)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to get sync committees from trusted to latest: deterministic=%d, latest=%d", claimedDeterministicL1.ConsensusUpdate.FinalizedHeader.Slot, latestL1.ConsensusUpdate.FinalizedHeader.Slot)

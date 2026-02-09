@@ -152,17 +152,19 @@ func (pr *L1Client) GetConsensusHeaderByBlockNumber(ctx context.Context, blockNu
 
 // GetSyncCommitteesFromTrustedToLatest returns the sync committee updates needed to transition from
 // the trusted state to the latest finalized header.
-// If latestLcUpdateSnapshot is provided, it will be used for the latestPeriod sync committee update
+// If lcUpdateSnapshot is provided, it will be used for the sync committee update of the snapshot's period
 // to ensure consistency with preimage-maker's cached data.
 func (pr *L1Client) GetSyncCommitteesFromTrustedToLatest(
 	ctx context.Context,
 	trusted *types.L1Header,
 	lfh *types.L1Header,
-	latestLcUpdateSnapshot *beacon.LightClientUpdateData,
+	lcUpdateSnapshot *beacon.LightClientUpdateData,
 ) ([]*types.L1Header, error) {
 	statePeriod := pr.computeSyncCommitteePeriod(pr.computeEpoch(trusted.ConsensusUpdate.SignatureSlot))
 	latestPeriod := pr.computeSyncCommitteePeriod(pr.computeEpoch(lfh.ConsensusUpdate.SignatureSlot))
-	pr.logger.InfoContext(ctx, "GetSyncCommitteesFromTrustedToLatest", "statePeriod", statePeriod, "latestPeriod", latestPeriod)
+	snapshotPeriod := pr.computeSyncCommitteePeriod(pr.computeEpoch(uint64(lcUpdateSnapshot.SignatureSlot)))
+
+	pr.logger.InfoContext(ctx, "GetSyncCommitteesFromTrustedToLatest", "statePeriod", statePeriod, "latestPeriod", latestPeriod, "snapshotPeriod", snapshotPeriod)
 	res, err := pr.beaconClient.GetLightClientUpdate(ctx, statePeriod)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to get LightClientUpdate: state_period=%v", statePeriod)
@@ -200,9 +202,10 @@ func (pr *L1Client) GetSyncCommitteesFromTrustedToLatest(
 	for p := statePeriod + 1; p <= latestPeriod; p++ {
 		var header *types.L1Header
 		// Use cached snapshot for latestPeriod to ensure consistency with preimage-maker
-		if p == latestPeriod && latestLcUpdateSnapshot != nil {
-			pr.logger.InfoContext(ctx, "using cached snapshot for latestPeriod sync committee update", "period", p)
-			header, err = pr.buildNextSyncCommitteeUpdateFromData(latestLcUpdateSnapshot, trustedNextSyncCommittee)
+		// Only use snapshot when it matches the latestPeriod
+		if p == latestPeriod && snapshotPeriod == latestPeriod {
+			pr.logger.InfoContext(ctx, "using cached snapshot for sync committee update", "period", p)
+			header, err = pr.buildNextSyncCommitteeUpdateFromData(lcUpdateSnapshot, trustedNextSyncCommittee)
 		} else {
 			header, err = pr.buildNextSyncCommitteeUpdate(ctx, p, trustedNextSyncCommittee)
 		}
