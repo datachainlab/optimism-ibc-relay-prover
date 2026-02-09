@@ -101,17 +101,10 @@ func (pr *L1Client) GetFinalizedL1Header(ctx context.Context, l1HeadHash common.
 }
 
 func (pr *L1Client) BuildInitialState(ctx context.Context, blockNumber uint64) (*InitialState, error) {
-
-	timestamp, err := pr.TimestampAt(ctx, blockNumber)
+	period, slot, timestamp, err := pr.GetPeriodByBlockNumber(ctx, blockNumber)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to get timestamp at blockNumber=%d", blockNumber)
+		return nil, errors.Wrapf(err, "failed to get period by blockNumber=%d", blockNumber)
 	}
-	slot, err := pr.getSlotAtTimestamp(ctx, timestamp)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to get slot at timestamp=%d", timestamp)
-	}
-	period := pr.computeSyncCommitteePeriod(pr.computeEpoch(slot))
-
 	currentSyncCommittee, err := pr.getBootstrapInPeriod(ctx, period)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to get bootstrap in period %v", period)
@@ -137,18 +130,25 @@ func (pr *L1Client) BuildInitialState(ctx context.Context, blockNumber uint64) (
 	}, nil
 }
 
-func (pr *L1Client) GetConsensusHeaderByBlockNumber(ctx context.Context, blockNumber uint64) (*types.L1Header, uint64, error) {
+func (pr *L1Client) GetPeriodAndNextSyncCommitteeUpdateByBlockNumber(ctx context.Context, blockNumber uint64) (uint64, *types.L1Header, error) {
+	period, _, _, err := pr.GetPeriodByBlockNumber(ctx, blockNumber)
+	if err != nil {
+		return 0, nil, errors.Wrapf(err, "failed to get period by blockNumber=%d", blockNumber)
+	}
+	res, err := pr.buildNextSyncCommitteeUpdate(ctx, period, nil)
+	return period, res, err
+}
+
+func (pr *L1Client) GetPeriodByBlockNumber(ctx context.Context, blockNumber uint64) (uint64, uint64, uint64, error) {
 	timestamp, err := pr.TimestampAt(ctx, blockNumber)
 	if err != nil {
-		return nil, 0, errors.Wrapf(err, "failed to get timestamp at blockNumber=%d", blockNumber)
+		return 0, 0, 0, errors.Wrapf(err, "failed to get timestamp at blockNumber=%d", blockNumber)
 	}
 	slot, err := pr.getSlotAtTimestamp(ctx, timestamp)
 	if err != nil {
-		return nil, 0, errors.Wrapf(err, "failed to get slot at timestamp=%d", timestamp)
+		return 0, 0, 0, errors.Wrapf(err, "failed to get slot at timestamp=%d", timestamp)
 	}
-	period := pr.computeSyncCommitteePeriod(pr.computeEpoch(slot))
-	res, err := pr.buildNextSyncCommitteeUpdate(ctx, period, nil)
-	return res, period, err
+	return pr.computeSyncCommitteePeriod(pr.computeEpoch(slot)), slot, timestamp, nil
 }
 
 // GetSyncCommitteesFromTrustedToDeterministic returns the sync committee updates needed to transition from

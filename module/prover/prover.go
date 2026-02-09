@@ -74,21 +74,13 @@ func (pr *Prover) GetLatestFinalizedHeader(ctx context.Context) (latestFinalized
 		return nil, errors.Wrapf(err, "failed to get finalized L1 header: number=%d", preimageMetadata.L1Head)
 	}
 
-	// Find L2 where L1 is deterministic.
-	deterministicL1Header, _, l2Output, err := pr.getDeterministicL1Header(ctx, preimageMetadata.Claimed)
+	_, claimedL1Header, l2Output, err := pr.getDeterministicPeriod(ctx, preimageMetadata.Claimed)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to get deterministic L1 header: number=%d", preimageMetadata.Claimed)
 	}
 
-	pr.GetLogger().DebugContext(ctx, "deterministicL1Header", "number", deterministicL1Header.ExecutionUpdate.BlockNumber,
-		"finalized-slot", deterministicL1Header.ConsensusUpdate.FinalizedHeader.Slot,
-		"signature-slot", deterministicL1Header.ConsensusUpdate.SignatureSlot)
-	pr.GetLogger().DebugContext(ctx, "latestL1Header", "number", latestL1Header.ExecutionUpdate.BlockNumber,
-		"finalized-slot", latestL1Header.ConsensusUpdate.FinalizedHeader.Slot,
-		"signature-slot", latestL1Header.ConsensusUpdate.SignatureSlot)
-
 	header := &types.Header{
-		DeterministicToLatest: []*types.L1Header{deterministicL1Header, latestL1Header},
+		DeterministicToLatest: []*types.L1Header{claimedL1Header, latestL1Header},
 		Derivation: &types.Derivation{
 			L2OutputRoot:  l2Output.OutputRoot[:],
 			L2BlockNumber: l2Output.BlockRef.Number,
@@ -140,12 +132,11 @@ func (pr *Prover) SetupHeadersForUpdate(ctx context.Context, counterparty core.F
 			return nil, errors.Wrapf(err, "failed to get latest l1 header: l1Number=%s", metadata.L1Head.String())
 		}
 
-		// Get deterministic L1
-		agreedDeterministicL1, agreedDeterministicL1Period, agreedOutput, err := pr.getDeterministicL1Header(ctx, metadata.Agreed)
+		agreedDeterministicL1Period, agreedDeterministicL1, agreedOutput, err := pr.getDeterministicPeriod(ctx, metadata.Agreed)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to get deterministic l1 header: agreed l2Number=%d", metadata.Agreed)
 		}
-		claimedDeterministicL1, claimedDeterministicL1Period, claimedOutput, err := pr.getDeterministicL1Header(ctx, metadata.Claimed)
+		claimedDeterministicL1Period, claimedDeterministicL1, claimedOutput, err := pr.getDeterministicPeriod(ctx, metadata.Claimed)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to get deterministic l1 header: claimed l2Number=%d", metadata.Claimed)
 		}
@@ -249,7 +240,7 @@ func (pr *Prover) CreateInitialLightClientState(ctx context.Context, height expo
 	var l1Origin uint64
 	if height != nil {
 		l2Number = height.GetRevisionHeight()
-		l1Header, _, trustedOutput, err := pr.getDeterministicL1Header(ctx, l2Number)
+		_, l1Header, trustedOutput, err := pr.getDeterministicPeriod(ctx, l2Number)
 		if err != nil {
 			return nil, nil, errors.Wrapf(err, "failed to get deterministic l1 header: l2Number=%d", l2Number)
 		}
@@ -349,17 +340,17 @@ func (pr *Prover) SetupForRelay(ctx context.Context) error {
 	return nil
 }
 
-// getDeterministicL1Header retrieves a deterministic L1 header and its associated L2 output response for a given L2 block number.
-func (pr *Prover) getDeterministicL1Header(ctx context.Context, l2Number uint64) (*types.L1Header, uint64, *l2.OutputResponse, error) {
+// getDeterministicPeriod retrieves a deterministic L1 header and its associated L2 output response for a given L2 block number.
+func (pr *Prover) getDeterministicPeriod(ctx context.Context, l2Number uint64) (uint64, *types.L1Header, *l2.OutputResponse, error) {
 	l2Output, err := pr.l2Client.OutputAtBlock(ctx, l2Number)
 	if err != nil {
-		return nil, 0, nil, errors.Wrapf(err, "failed to get output at block: l2Number=%d", l2Number)
+		return 0, nil, nil, errors.Wrapf(err, "failed to get output at block: l2Number=%d", l2Number)
 	}
-	l1Header, period, err := pr.l1Client.GetConsensusHeaderByBlockNumber(ctx, l2Output.BlockRef.L1Origin.Number)
+	period, l1header, err := pr.l1Client.GetPeriodAndNextSyncCommitteeUpdateByBlockNumber(ctx, l2Output.BlockRef.L1Origin.Number)
 	if err != nil {
-		return nil, 0, nil, errors.Wrapf(err, "failed to get l1 consensus: l1Number=%d", l2Output.BlockRef.L1Origin.Number)
+		return 0, nil, nil, errors.Wrapf(err, "failed to get l1 consensus: l1Number=%d", l2Output.BlockRef.L1Origin.Number)
 	}
-	return l1Header, period, l2Output, nil
+	return period, l1header, l2Output, nil
 }
 
 func (pr *Prover) makeHeaderChan(ctx context.Context, requests []*l2.PreimageMetadata, fn func(context.Context, *l2.PreimageMetadata) (core.Header, error)) <-chan *core.HeaderOrError {

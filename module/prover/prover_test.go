@@ -137,7 +137,7 @@ func (ts *ProverTestSuite) TestCheckRefreshRequired() {
 	ctx := context.Background()
 	syncStatus, err := ts.prover.l2Client.SyncStatus(ctx)
 	ts.Require().NoError(err)
-	trustedL1Header, _, _, err := ts.prover.getDeterministicL1Header(ctx, syncStatus.FinalizedL2.Number)
+	_, trustedL1Header, _, err := ts.prover.getDeterministicPeriod(ctx, syncStatus.FinalizedL2.Number)
 	ts.Require().NoError(err)
 	latest, err := ts.prover.l1Client.GetLatestETHHeader(ctx)
 	ts.Require().NoError(err)
