@@ -146,9 +146,9 @@ func (pr *L1Client) GetPreviousPeriodByBlockNumber(ctx context.Context, blockNum
 	return period, nil
 }
 
-// GetSyncCommitteesFromTrustedToDeterministic returns the sync committee updates needed to transition from
-// the trusted state to the deterministic header.
-// This function does not use snapshot since both trusted and deterministic use past periods (period - 1).
+// GetSyncCommitteesFromAgreedToClaimed returns the sync committee updates needed to transition from
+// the agreed state to the claimed header.
+// This function does not use snapshot since both agreed and claimed use past periods (period - 1).
 func (pr *L1Client) GetSyncCommitteesFromAgreedToClaimed(
 	ctx context.Context,
 	agreedPeriod uint64,
@@ -176,7 +176,7 @@ func (pr *L1Client) GetSyncCommitteesFromAgreedToClaimed(
 		}
 		return []*types.L1Header{claimed}, nil
 	} else if agreedPeriod > claimedPeriod {
-		return nil, fmt.Errorf("agreedPeriod must be greater less than or equals to claimedPeriod: agreedPeriod=%v claimedPeriod=%v", agreedPeriod, claimedPeriod)
+		return nil, fmt.Errorf("agreedPeriod must be less than or equal to claimedPeriod: agreedPeriod=%v claimedPeriod=%v", agreedPeriod, claimedPeriod)
 	}
 
 	var (
@@ -201,8 +201,8 @@ func (pr *L1Client) GetSyncCommitteesFromAgreedToClaimed(
 	return append(headers, claimed), nil
 }
 
-// GetSyncCommitteesFromDeterministicToLatest returns the sync committee updates needed to transition from
-// the deterministic header to the latest finalized header.
+// GetSyncCommitteesFromClaimedToLatest returns the sync committee updates needed to transition from
+// the claimed header to the latest finalized header.
 // lcUpdateSnapshot is used for the sync committee update at latestPeriod to ensure consistency with preimage-maker's cached data.
 func (pr *L1Client) GetSyncCommitteesFromClaimedToLatest(
 	ctx context.Context,
@@ -218,7 +218,7 @@ func (pr *L1Client) GetSyncCommitteesFromClaimedToLatest(
 		return nil, errors.Wrapf(err, "failed to get LightClientUpdate: claimedPeriod=%v", claimedPeriod)
 	}
 	if claimedPeriod >= latestPeriod {
-		return nil, fmt.Errorf("claimedPeriod must be than less than latestPeriod: claimedPeriod=%v latestPeriod=%v", claimedPeriod, latestPeriod)
+		return nil, fmt.Errorf("claimedPeriod must be less than latestPeriod: claimedPeriod=%v latestPeriod=%v", claimedPeriod, latestPeriod)
 	}
 
 	var (

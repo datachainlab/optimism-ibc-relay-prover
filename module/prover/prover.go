@@ -162,11 +162,11 @@ func (pr *Prover) SetupHeadersForUpdate(ctx context.Context, counterparty core.F
 		}
 		ih.TrustedToDeterministic, err = pr.l1Client.GetSyncCommitteesFromAgreedToClaimed(ctx, agreedDeterministicL1Period, claimedDeterministicL1Period, claimedL1)
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to get sync committees from trusted to deterministic: trusted=%d, deterministic=%d", agreedL1.ConsensusUpdate.FinalizedHeader.Slot, claimedL1.ConsensusUpdate.FinalizedHeader.Slot)
+			return nil, errors.Wrapf(err, "failed to get sync committees from agreed to claimed: agreed=%d, claimed=%d", agreedL1.ConsensusUpdate.FinalizedHeader.Slot, claimedL1.ConsensusUpdate.FinalizedHeader.Slot)
 		}
 		ih.DeterministicToLatest, err = pr.l1Client.GetSyncCommitteesFromClaimedToLatest(ctx, claimedDeterministicL1Period, latestL1Period, latestL1, latestLcUpdateSnapshot)
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to get sync committees from deterministic to latest: deterministic=%d, latest=%d", claimedL1.ConsensusUpdate.FinalizedHeader.Slot, latestL1.ConsensusUpdate.FinalizedHeader.Slot)
+			return nil, errors.Wrapf(err, "failed to get sync committees from claimed to latest: claimed=%d, latest=%d", claimedL1.ConsensusUpdate.FinalizedHeader.Slot, latestL1.ConsensusUpdate.FinalizedHeader.Slot)
 		}
 		preimage, err := pr.l2Client.GetPreimage(ctx, metadata)
 		if err != nil {
@@ -195,21 +195,21 @@ func (pr *Prover) CheckRefreshRequired(ctx context.Context, counterparty core.Ch
 		return false, errors.Wrapf(err, "failed to unpack client state")
 	}
 
-	// Get trusted l2 timestamp
+	// Get light client's last L2 timestamp
 	lcLastL2Timestamp, err := pr.l2Client.TimestampAt(ctx, cs.GetLatestHeight().GetRevisionHeight())
 	if err != nil {
-		return false, errors.Wrapf(err, "failed to get output at block: l2Number=%d", cs.GetLatestHeight().GetRevisionHeight())
+		return false, errors.Wrapf(err, "failed to get timestamp at block: l2Number=%d", cs.GetLatestHeight().GetRevisionHeight())
 	}
 	lcLastTimestamp := time.Unix(int64(lcLastL2Timestamp), 0)
 
-	// Get latest l2 timestamp
+	// Get latest L2 timestamp
 	latestPreimageMetadata, err := pr.l2Client.GetLatestPreimageMetadata(ctx)
 	if err != nil {
 		return false, errors.Wrapf(err, "failed to get latest preimage metadata")
 	}
 	latestL2Timestamp, err := pr.l2Client.TimestampAt(ctx, latestPreimageMetadata.Claimed)
 	if err != nil {
-		return false, errors.Wrapf(err, "failed to get output at block: l2Number=%d", latestPreimageMetadata.Claimed)
+		return false, errors.Wrapf(err, "failed to get timestamp at block: l2Number=%d", latestPreimageMetadata.Claimed)
 	}
 	latestTimestamp := time.Unix(int64(latestL2Timestamp), 0)
 
