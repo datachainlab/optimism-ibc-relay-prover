@@ -101,7 +101,7 @@ func (pr *L1Client) GetFinalizedL1Header(ctx context.Context, l1HeadHash common.
 }
 
 func (pr *L1Client) BuildInitialState(ctx context.Context, blockNumber uint64) (*InitialState, error) {
-	period, slot, timestamp, err := pr.GetPeriodByBlockNumber(ctx, blockNumber)
+	period, slot, timestamp, err := pr.GetPreviousPeriodByBlockNumber(ctx, blockNumber)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to get period by blockNumber=%d", blockNumber)
 	}
@@ -131,7 +131,7 @@ func (pr *L1Client) BuildInitialState(ctx context.Context, blockNumber uint64) (
 }
 
 func (pr *L1Client) GetPeriodAndNextSyncCommitteeUpdateByBlockNumber(ctx context.Context, blockNumber uint64) (uint64, *types.L1Header, error) {
-	period, _, _, err := pr.GetPeriodByBlockNumber(ctx, blockNumber)
+	period, _, _, err := pr.GetPreviousPeriodByBlockNumber(ctx, blockNumber)
 	if err != nil {
 		return 0, nil, errors.Wrapf(err, "failed to get period by blockNumber=%d", blockNumber)
 	}
@@ -139,7 +139,7 @@ func (pr *L1Client) GetPeriodAndNextSyncCommitteeUpdateByBlockNumber(ctx context
 	return period, res, err
 }
 
-func (pr *L1Client) GetPeriodByBlockNumber(ctx context.Context, blockNumber uint64) (uint64, uint64, uint64, error) {
+func (pr *L1Client) GetPreviousPeriodByBlockNumber(ctx context.Context, blockNumber uint64) (uint64, uint64, uint64, error) {
 	timestamp, err := pr.TimestampAt(ctx, blockNumber)
 	if err != nil {
 		return 0, 0, 0, errors.Wrapf(err, "failed to get timestamp at blockNumber=%d", blockNumber)
@@ -148,7 +148,11 @@ func (pr *L1Client) GetPeriodByBlockNumber(ctx context.Context, blockNumber uint
 	if err != nil {
 		return 0, 0, 0, errors.Wrapf(err, "failed to get slot at timestamp=%d", timestamp)
 	}
-	return pr.computeSyncCommitteePeriod(pr.computeEpoch(slot)), slot, timestamp, nil
+	period := pr.computeSyncCommitteePeriod(pr.computeEpoch(slot))
+	if period > 0 {
+		period--
+	}
+	return period, slot, timestamp, nil
 }
 
 // GetSyncCommitteesFromTrustedToDeterministic returns the sync committee updates needed to transition from
@@ -181,10 +185,8 @@ func (pr *L1Client) GetSyncCommitteesFromAgreedToClaimed(
 		}
 		return []*types.L1Header{claimed}, nil
 	} else if agreedPeriod > claimedPeriod {
-		return nil, fmt.Errorf("agreedPeriod is greater than claimedPeriod: agreedPeriod=%v claimedPeriod=%v", agreedPeriod, claimedPeriod)
+		return nil, fmt.Errorf("agreedPeriod must be greater less than or equals to claimedPeriod: agreedPeriod=%v claimedPeriod=%v", agreedPeriod, claimedPeriod)
 	}
-
-	//--------- In case trustedPeriod < deterministicPeriod ---------//
 
 	var (
 		headers                     []*types.L1Header
@@ -218,29 +220,14 @@ func (pr *L1Client) GetSyncCommitteesFromClaimedToLatest(
 	latest *types.L1Header,
 	lcUpdateSnapshot *beacon.LightClientUpdateData,
 ) ([]*types.L1Header, error) {
-	pr.logger.InfoContext(ctx, "GetSyncCommitteesFromDeterministicToLatest", "claimedPeriod", claimedPeriod, "latestPeriod", latestPeriod)
+	pr.logger.InfoContext(ctx, "GetSyncCommitteesFromClaimedToLatest", "claimedPeriod", claimedPeriod, "latestPeriod", latestPeriod)
 
 	res, err := pr.beaconClient.GetLightClientUpdate(ctx, claimedPeriod)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to get LightClientUpdate: claimedPeriod=%v", claimedPeriod)
 	}
-	if claimedPeriod == latestPeriod {
-		root, err := res.Data.FinalizedHeader.Beacon.HashTreeRoot()
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to calculate root")
-		}
-		bootstrapRes, err := pr.beaconClient.GetBootstrap(ctx, root[:])
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to get bootstrap")
-		}
-		pr.logger.InfoContext(ctx, "using cached snapshot for sync committee update", "period", latestPeriod)
-		header, err := pr.buildNextSyncCommitteeUpdateFromData(lcUpdateSnapshot, bootstrapRes.Data.CurrentSyncCommittee.ToProto())
-		if err != nil {
-			return nil, errors.Wrapf(err, "failed to build next sync committee update")
-		}
-		return []*types.L1Header{header}, nil
-	} else if claimedPeriod > latestPeriod {
-		return nil, fmt.Errorf("claimedPeriod is greater than latestPeriod: claimedPeriod=%v latestPeriod=%v", claimedPeriod, latestPeriod)
+	if claimedPeriod >= latestPeriod {
+		return nil, fmt.Errorf("claimedPeriod must be than less than latestPeriod: claimedPeriod=%v latestPeriod=%v", claimedPeriod, latestPeriod)
 	}
 
 	var (

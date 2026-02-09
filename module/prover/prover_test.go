@@ -117,7 +117,7 @@ func (ts *ProverTestSuite) TestGetLatestFinalizedHeader() {
 	ts.Require().NoError(err)
 	h := header.(*types.Header)
 	ts.Require().Len(h.TrustedToDeterministic, 0)
-	ts.Require().Len(h.DeterministicToLatest, 2)
+	ts.Require().True(len(h.DeterministicToLatest) >= 1)
 	ts.Require().True(h.Derivation.L2BlockNumber > 0)
 }
 

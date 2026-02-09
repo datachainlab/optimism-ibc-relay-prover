@@ -68,19 +68,12 @@ func (pr *Prover) GetLatestFinalizedHeader(ctx context.Context) (latestFinalized
 
 	pr.GetLogger().InfoContext(ctx, "GetLatestFinalizedHeader", "claimed_l2", preimageMetadata.Claimed, "agreed_l2", preimageMetadata.Agreed, "latest_l1", preimageMetadata.L1Head)
 
-	// Find L1 where preimages are created.
-	latestL1Header, _, _, err := pr.l1Client.GetFinalizedL1Header(ctx, preimageMetadata.L1Head)
+	l2Output, err := pr.l2Client.OutputAtBlock(ctx, preimageMetadata.Claimed)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to get finalized L1 header: number=%d", preimageMetadata.L1Head)
-	}
-
-	_, claimedL1Header, l2Output, err := pr.getDeterministicPeriod(ctx, preimageMetadata.Claimed)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to get deterministic L1 header: number=%d", preimageMetadata.Claimed)
+		return nil, errors.Wrapf(err, "failed to get output at block: number=%d", preimageMetadata.Claimed)
 	}
 
 	header := &types.Header{
-		DeterministicToLatest: []*types.L1Header{claimedL1Header, latestL1Header},
 		Derivation: &types.Derivation{
 			L2OutputRoot:  l2Output.OutputRoot[:],
 			L2BlockNumber: l2Output.BlockRef.Number,
@@ -132,23 +125,23 @@ func (pr *Prover) SetupHeadersForUpdate(ctx context.Context, counterparty core.F
 			return nil, errors.Wrapf(err, "failed to get latest l1 header: l1Number=%s", metadata.L1Head.String())
 		}
 
-		agreedDeterministicL1Period, agreedDeterministicL1, agreedOutput, err := pr.getDeterministicPeriod(ctx, metadata.Agreed)
+		agreedDeterministicL1Period, agreedL1, agreedOutput, err := pr.getDeterministicPeriod(ctx, metadata.Agreed)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to get deterministic l1 header: agreed l2Number=%d", metadata.Agreed)
 		}
-		claimedDeterministicL1Period, claimedDeterministicL1, claimedOutput, err := pr.getDeterministicPeriod(ctx, metadata.Claimed)
+		claimedDeterministicL1Period, claimedL1, claimedOutput, err := pr.getDeterministicPeriod(ctx, metadata.Claimed)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to get deterministic l1 header: claimed l2Number=%d", metadata.Claimed)
 		}
 
 		pr.GetLogger().InfoContext(ctx, "header chunk",
 			"agreed_l2", agreedOutput.BlockRef.Number,
-			"agreed_deterministic_l1_slot", agreedDeterministicL1.ConsensusUpdate.FinalizedHeader.Slot,
-			"agreed_deterministic_l1_signature_slot", agreedDeterministicL1.ConsensusUpdate.SignatureSlot,
+			"agreed_l1_slot", agreedL1.ConsensusUpdate.FinalizedHeader.Slot,
+			"agreed_l1_signature_slot", agreedL1.ConsensusUpdate.SignatureSlot,
 			"agreed_deterministic_l1_period", agreedDeterministicL1Period,
 			"claimed_l2", claimedOutput.BlockRef.Number,
-			"claimed_deterministic_l1_slot", claimedDeterministicL1.ConsensusUpdate.FinalizedHeader.Slot,
-			"claimed_deterministic_l1_signature_slot", claimedDeterministicL1.ConsensusUpdate.SignatureSlot,
+			"claimed_l1_slot", claimedL1.ConsensusUpdate.FinalizedHeader.Slot,
+			"claimed_l1_signature_slot", claimedL1.ConsensusUpdate.SignatureSlot,
 			"claimed_deterministic_l1_period", claimedDeterministicL1Period,
 			"latest_l1_slot", latestL1.ConsensusUpdate.FinalizedHeader.Slot,
 			"latest_l1_signature_slot", latestL1.ConsensusUpdate.SignatureSlot,
@@ -167,13 +160,13 @@ func (pr *Prover) SetupHeadersForUpdate(ctx context.Context, counterparty core.F
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to build account update: number=%d", claimedOutput.BlockRef.Number)
 		}
-		ih.TrustedToDeterministic, err = pr.l1Client.GetSyncCommitteesFromAgreedToClaimed(ctx, agreedDeterministicL1Period, claimedDeterministicL1Period, claimedDeterministicL1)
+		ih.TrustedToDeterministic, err = pr.l1Client.GetSyncCommitteesFromAgreedToClaimed(ctx, agreedDeterministicL1Period, claimedDeterministicL1Period, claimedL1)
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to get sync committees from trusted to deterministic: trusted=%d, deterministic=%d", agreedDeterministicL1.ConsensusUpdate.FinalizedHeader.Slot, claimedDeterministicL1.ConsensusUpdate.FinalizedHeader.Slot)
+			return nil, errors.Wrapf(err, "failed to get sync committees from trusted to deterministic: trusted=%d, deterministic=%d", agreedL1.ConsensusUpdate.FinalizedHeader.Slot, claimedL1.ConsensusUpdate.FinalizedHeader.Slot)
 		}
 		ih.DeterministicToLatest, err = pr.l1Client.GetSyncCommitteesFromClaimedToLatest(ctx, claimedDeterministicL1Period, latestL1Period, latestL1, latestLcUpdateSnapshot)
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to get sync committees from deterministic to latest: deterministic=%d, latest=%d", claimedDeterministicL1.ConsensusUpdate.FinalizedHeader.Slot, latestL1.ConsensusUpdate.FinalizedHeader.Slot)
+			return nil, errors.Wrapf(err, "failed to get sync committees from deterministic to latest: deterministic=%d, latest=%d", claimedL1.ConsensusUpdate.FinalizedHeader.Slot, latestL1.ConsensusUpdate.FinalizedHeader.Slot)
 		}
 		preimage, err := pr.l2Client.GetPreimage(ctx, metadata)
 		if err != nil {
@@ -202,25 +195,25 @@ func (pr *Prover) CheckRefreshRequired(ctx context.Context, counterparty core.Ch
 		return false, errors.Wrapf(err, "failed to unpack client state")
 	}
 
-	// Get trusted 1 timestamp
-	l2Output, err := pr.l2Client.OutputAtBlock(ctx, cs.GetLatestHeight().GetRevisionHeight())
+	// Get trusted l2 timestamp
+	consensusL2Timestamp, err := pr.l2Client.TimestampAt(ctx, cs.GetLatestHeight().GetRevisionHeight())
 	if err != nil {
 		return false, errors.Wrapf(err, "failed to get output at block: l2Number=%d", cs.GetLatestHeight().GetRevisionHeight())
 	}
-	l1HeaderTimestamp, err := pr.l1Client.TimestampAt(ctx, l2Output.BlockRef.L1Origin.Number)
-	if err != nil {
-		return false, errors.Wrapf(err, "failed to get l1 timestamp at: l1Number=%d", l2Output.BlockRef.L1Origin.Number)
-	}
-	lcLastTimestamp := time.Unix(int64(l1HeaderTimestamp), 0)
+	lcLastTimestamp := time.Unix(int64(consensusL2Timestamp), 0)
 
-	// Get latest l1 timestamp on chain
-	latestL1Header, err := pr.l1Client.GetLatestETHHeader(ctx)
+	// Get latest l2 timestamp
+	latestPreimageMetadata, err := pr.l2Client.GetLatestPreimageMetadata(ctx)
 	if err != nil {
-		return false, errors.Wrapf(err, "failed to get latest l1 header")
+		return false, errors.Wrapf(err, "failed to get latest preimage metadata")
 	}
-	selfTimestamp := time.Unix(int64(latestL1Header.Time), 0)
+	latestL2Timestamp, err := pr.l2Client.TimestampAt(ctx, latestPreimageMetadata.Claimed)
+	if err != nil {
+		return false, errors.Wrapf(err, "failed to get output at block: l2Number=%d", latestPreimageMetadata.Claimed)
+	}
+	latestTimestamp := time.Unix(int64(latestL2Timestamp), 0)
 
-	elapsedTime := selfTimestamp.Sub(lcLastTimestamp)
+	elapsedTime := latestTimestamp.Sub(lcLastTimestamp)
 
 	durationMulByFraction := func(d time.Duration, f *types.Fraction) time.Duration {
 		nsec := d.Nanoseconds() * int64(f.Numerator) / int64(f.Denominator)
@@ -228,42 +221,29 @@ func (pr *Prover) CheckRefreshRequired(ctx context.Context, counterparty core.Ch
 	}
 	needsRefresh := elapsedTime > durationMulByFraction(pr.trustingPeriod, pr.refreshThresholdRate)
 
-	pr.GetLogger().InfoContext(ctx, "CheckRefreshRequired", "needsRefresh", needsRefresh, "selfTimestamp", selfTimestamp, "lcLastTimestamp", lcLastTimestamp)
+	pr.GetLogger().InfoContext(ctx, "CheckRefreshRequired", "needsRefresh", needsRefresh, "latestTimestamp", latestTimestamp, "lcLastTimestamp", lcLastTimestamp)
 
 	return needsRefresh, nil
 }
 
 func (pr *Prover) CreateInitialLightClientState(ctx context.Context, height exported.Height) (exported.ClientState, exported.ConsensusState, error) {
-	var l2Number uint64
-	var l2OutputRoot []byte
-	var l1Number uint64
-	var l1Origin uint64
+	var l2Output *l2.OutputResponse
+	var err error
 	if height != nil {
-		l2Number = height.GetRevisionHeight()
-		_, l1Header, trustedOutput, err := pr.getDeterministicPeriod(ctx, l2Number)
-		if err != nil {
-			return nil, nil, errors.Wrapf(err, "failed to get deterministic l1 header: l2Number=%d", l2Number)
-		}
-		l2OutputRoot = trustedOutput.OutputRoot[:]
-		l1Number = l1Header.ExecutionUpdate.BlockNumber
-		l1Origin = trustedOutput.BlockRef.L1Origin.Number
+		l2Output, err = pr.l2Client.OutputAtBlock(ctx, height.GetRevisionHeight())
 	} else {
-		finalized, err := pr.GetLatestFinalizedHeader(ctx)
+		var preimageMetadata *l2.PreimageMetadata
+		preimageMetadata, err = pr.l2Client.GetLatestPreimageMetadata(ctx)
 		if err != nil {
-			return nil, nil, errors.Wrap(err, "failed to get latest finalized header")
+			return nil, nil, err
 		}
-		header := finalized.(*types.Header)
-		derivation := header.Derivation
-		l2Number = derivation.L2BlockNumber
-		l2OutputRoot = derivation.L2OutputRoot
-		l1Number = header.DeterministicToLatest[0].ExecutionUpdate.BlockNumber
-
-		output, err := pr.l2Client.OutputAtBlock(ctx, l2Number)
-		if err != nil {
-			return nil, nil, errors.Wrap(err, "failed to get latest finalized header")
-		}
-		l1Origin = output.BlockRef.L1Origin.Number
+		l2Output, err = pr.l2Client.OutputAtBlock(ctx, preimageMetadata.Claimed)
 	}
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "failed to get latest finalized header")
+	}
+	l2Number := l2Output.BlockRef.Number
+	l1Origin := l2Output.BlockRef.L1Origin.Number
 
 	// L2
 	chainID, err := pr.l2Client.Client().ChainID(ctx)
@@ -276,9 +256,9 @@ func (pr *Prover) CreateInitialLightClientState(ctx context.Context, height expo
 	}
 
 	// L1
-	l1InitialState, err := pr.l1Client.BuildInitialState(ctx, l1Number)
+	l1InitialState, err := pr.l1Client.BuildInitialState(ctx, l1Origin)
 	if err != nil {
-		return nil, nil, errors.Wrapf(err, "failed to build l1 initial state: l1Number=%d", l1Number)
+		return nil, nil, errors.Wrapf(err, "failed to build l1 initial state: l1Origin=%d", l1Origin)
 	}
 	l1Config, err := pr.l1Client.BuildL1Config(l1InitialState, pr.maxClockDrift, pr.trustingPeriod)
 	if err != nil {
@@ -290,7 +270,7 @@ func (pr *Prover) CreateInitialLightClientState(ctx context.Context, height expo
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "failed to build account update for initial state: number=%d", l2Number)
 	}
-	pr.GetLogger().InfoContext(ctx, "CreateInitialLightClientState", "l1", l1Number, "l2", l2Number, "slot", l1InitialState.Slot, "period", l1InitialState.Period, "storageRoot", common.Bytes2Hex(accountUpdate.AccountStorageRoot))
+	pr.GetLogger().InfoContext(ctx, "CreateInitialLightClientState", "l1", l1Origin, "l2", l2Number, "slot", l1InitialState.Slot, "period", l1InitialState.Period, "storageRoot", common.Bytes2Hex(accountUpdate.AccountStorageRoot))
 	clientState := &types.ClientState{
 		ChainId:            chainID.Uint64(),
 		IbcStoreAddress:    pr.l2Client.Config().IBCAddress().Bytes(),
@@ -322,7 +302,7 @@ func (pr *Prover) CreateInitialLightClientState(ctx context.Context, height expo
 	consensusState := &types.ConsensusState{
 		StorageRoot:            accountUpdate.AccountStorageRoot[:],
 		Timestamp:              timestamp,
-		OutputRoot:             l2OutputRoot,
+		OutputRoot:             l2Output.OutputRoot[:],
 		L1Slot:                 l1InitialState.Slot,
 		L1CurrentSyncCommittee: l1InitialState.CurrentSyncCommittee.AggregatePubkey,
 		L1NextSyncCommittee:    l1InitialState.NextSyncCommittee.AggregatePubkey,
