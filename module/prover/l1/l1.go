@@ -59,63 +59,61 @@ func (pr *L1Client) GetLatestETHHeader(ctx context.Context) (*ethtypes.Header, e
 	return pr.executionClient.HeaderByNumber(ctx, nil)
 }
 
-func (pr *L1Client) GetFinalizedL1Header(ctx context.Context, l1HeadHash common.Hash) (*types.L1Header, error) {
+func (pr *L1Client) GetFinalizedL1Header(ctx context.Context, l1HeadHash common.Hash) (*types.L1Header, uint64, *beacon.LightClientUpdateData, error) {
 
-	// Get finalized L1 header from optimism-preimage-maker
+	// Get finalized L1 data from optimism-preimage-maker
 	type Request struct {
 		L1HeadHash common.Hash `json:"l1_head_hash"`
 	}
 	request := &Request{L1HeadHash: l1HeadHash}
 	rawResponse, err := pr.preimageMakerHttpClient.POST(ctx, fmt.Sprintf("%s/get_finalized_l1", pr.preimageMakerEndpoint.Get()), request)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to get finalized L1 header from preimage maker")
-	}
-	var res beacon.LightClientFinalityUpdateResponse
-	if err = json.Unmarshal(rawResponse, &res); err != nil {
-		return nil, errors.Wrap(err, "failed to unmarshal")
+		return nil, 0, nil, errors.Wrap(err, "failed to get finalized L1 data from preimage maker")
 	}
 
-	lcUpdate := res.Data.ToProto()
-	executionHeader := &res.Data.FinalizedHeader.Execution
+	// Parse FinalizedL1DataResponse
+	var finalizedL1Data beacon.FinalizedL1DataResponse
+	if err = json.Unmarshal(rawResponse, &finalizedL1Data); err != nil {
+		return nil, 0, nil, errors.Wrap(err, "failed to unmarshal FinalizedL1DataResponse")
+	}
+
+	lcUpdateSnapshot := &finalizedL1Data.LightClientUpdate.Data
+
+	// Build L1Header from finality_update
+	lcUpdate := finalizedL1Data.FinalityUpdate.Data.ToProto()
+	executionHeader := &finalizedL1Data.FinalityUpdate.Data.FinalizedHeader.Execution
 	executionUpdate, err := pr.buildExecutionUpdate(executionHeader)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to build execution update")
+		return nil, 0, nil, errors.Wrap(err, "failed to build execution update")
 	}
 	executionRoot, err := executionHeader.HashTreeRoot()
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to calculate execution root")
+		return nil, 0, nil, errors.Wrap(err, "failed to calculate execution root")
 	}
 	if !bytes.Equal(executionRoot[:], lcUpdate.FinalizedExecutionRoot) {
-		return nil, fmt.Errorf("execution root mismatch: %X != %X", executionRoot, lcUpdate.FinalizedExecutionRoot)
+		return nil, 0, nil, fmt.Errorf("execution root mismatch: %X != %X", executionRoot, lcUpdate.FinalizedExecutionRoot)
 	}
 	return &types.L1Header{
 		ConsensusUpdate: lcUpdate,
 		ExecutionUpdate: executionUpdate,
 		Timestamp:       executionHeader.Timestamp,
-	}, nil
+	}, finalizedL1Data.Period, lcUpdateSnapshot, nil
 }
 
 func (pr *L1Client) BuildInitialState(ctx context.Context, blockNumber uint64) (*InitialState, error) {
-
-	timestamp, err := pr.TimestampAt(ctx, blockNumber)
+	period, err := pr.GetPreviousPeriodByBlockNumber(ctx, blockNumber)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to get timestamp at blockNumber=%d", blockNumber)
+		return nil, errors.Wrapf(err, "failed to get period by blockNumber=%d", blockNumber)
 	}
-	slot, err := pr.getSlotAtTimestamp(ctx, timestamp)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to get slot at timestamp=%d", timestamp)
-	}
-	period := pr.computeSyncCommitteePeriod(pr.computeEpoch(slot))
-
 	currentSyncCommittee, err := pr.getBootstrapInPeriod(ctx, period)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to get bootstrap in period %v", period)
 	}
-	res2, err := pr.beaconClient.GetLightClientUpdate(ctx, period)
+	res, err := pr.beaconClient.GetLightClientUpdate(ctx, period)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to get LightClientUpdate: period=%v", period)
 	}
-	nextSyncCommittee := res2.Data.ToProto().NextSyncCommittee
+	nextSyncCommittee := res.Data.ToProto().NextSyncCommittee
 
 	genesis, err := pr.beaconClient.GetGenesis(ctx)
 	if err != nil {
@@ -124,37 +122,46 @@ func (pr *L1Client) BuildInitialState(ctx context.Context, blockNumber uint64) (
 
 	return &InitialState{
 		Genesis:              *genesis,
-		Slot:                 slot,
+		Slot:                 uint64(res.Data.FinalizedHeader.Beacon.Slot),
 		Period:               period,
 		CurrentSyncCommittee: *currentSyncCommittee,
 		NextSyncCommittee:    *nextSyncCommittee,
-		Timestamp:            timestamp,
+		Timestamp:            res.Data.FinalizedHeader.Execution.Timestamp,
 	}, nil
 }
 
-func (pr *L1Client) GetConsensusHeaderByBlockNumber(ctx context.Context, blockNumber uint64) (*types.L1Header, error) {
+func (pr *L1Client) GetPreviousPeriodByBlockNumber(ctx context.Context, blockNumber uint64) (uint64, error) {
 	timestamp, err := pr.TimestampAt(ctx, blockNumber)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to get timestamp at blockNumber=%d", blockNumber)
+		return 0, errors.Wrapf(err, "failed to get timestamp at blockNumber=%d", blockNumber)
 	}
 	slot, err := pr.getSlotAtTimestamp(ctx, timestamp)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to get slot at timestamp=%d", timestamp)
+		return 0, errors.Wrapf(err, "failed to get slot at timestamp=%d", timestamp)
 	}
 	period := pr.computeSyncCommitteePeriod(pr.computeEpoch(slot))
-	res, err := pr.BuildNextSyncCommitteeUpdate(ctx, period, nil)
-	return res, err
+	if period > 0 {
+		period--
+	}
+	return period, nil
 }
 
-func (pr *L1Client) GetSyncCommitteesFromTrustedToLatest(ctx context.Context, trusted *types.L1Header, lfh *types.L1Header) ([]*types.L1Header, error) {
-	statePeriod := pr.computeSyncCommitteePeriod(pr.computeEpoch(trusted.ConsensusUpdate.SignatureSlot))
-	latestPeriod := pr.computeSyncCommitteePeriod(pr.computeEpoch(lfh.ConsensusUpdate.SignatureSlot))
-	pr.logger.DebugContext(ctx, "GetSyncCommitteesFromTrustedToLatest", "statePeriod", statePeriod, "latestPeriod", latestPeriod)
-	res, err := pr.beaconClient.GetLightClientUpdate(ctx, statePeriod)
+// GetSyncCommitteesFromAgreedToClaimed returns the sync committee updates needed to transition from
+// the agreed state to the claimed header.
+// This function does not use snapshot since both agreed and claimed use past periods (period - 1).
+func (pr *L1Client) GetSyncCommitteesFromAgreedToClaimed(
+	ctx context.Context,
+	agreedPeriod uint64,
+	claimedPeriod uint64,
+	claimed *types.L1Header,
+) ([]*types.L1Header, error) {
+	pr.logger.InfoContext(ctx, "GetSyncCommitteesFromAgreedToClaimed", "agreedPeriod", agreedPeriod, "claimedPeriod", claimedPeriod)
+
+	res, err := pr.beaconClient.GetLightClientUpdate(ctx, agreedPeriod)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to get LightClientUpdate: state_period=%v", statePeriod)
+		return nil, errors.Wrapf(err, "failed to get LightClientUpdate: agreedPeriod=%v", agreedPeriod)
 	}
-	if statePeriod == latestPeriod {
+	if agreedPeriod == claimedPeriod {
 		root, err := res.Data.FinalizedHeader.Beacon.HashTreeRoot()
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to calculate root")
@@ -163,28 +170,22 @@ func (pr *L1Client) GetSyncCommitteesFromTrustedToLatest(ctx context.Context, tr
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to get bootstrap")
 		}
-		lfh.TrustedSyncCommittee = &lctypes.TrustedSyncCommittee{
+		claimed.TrustedSyncCommittee = &lctypes.TrustedSyncCommittee{
 			SyncCommittee: bootstrapRes.Data.CurrentSyncCommittee.ToProto(),
 			IsNext:        false,
 		}
-		return []*types.L1Header{lfh}, nil
-	} else if statePeriod > latestPeriod {
-		return nil, fmt.Errorf("the light-client server's response is old: client_state_period=%v latest_finalized_period=%v", statePeriod, latestPeriod)
+		return []*types.L1Header{claimed}, nil
+	} else if agreedPeriod > claimedPeriod {
+		return nil, fmt.Errorf("agreedPeriod must be less than or equal to claimedPeriod: agreedPeriod=%v claimedPeriod=%v", agreedPeriod, claimedPeriod)
 	}
-
-	//--------- In case statePeriod < latestPeriod ---------//
 
 	var (
 		headers                     []*types.L1Header
 		trustedNextSyncCommittee    *lctypes.SyncCommittee
 		trustedCurrentSyncCommittee *lctypes.SyncCommittee
 	)
-	res, err = pr.beaconClient.GetLightClientUpdate(ctx, statePeriod)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to get LightClientUpdate: state_period=%v", statePeriod)
-	}
 	trustedNextSyncCommittee = res.Data.ToProto().NextSyncCommittee
-	for p := statePeriod + 1; p <= latestPeriod; p++ {
+	for p := agreedPeriod + 1; p <= claimedPeriod; p++ {
 		header, err := pr.BuildNextSyncCommitteeUpdate(ctx, p, trustedNextSyncCommittee)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to build next sync committee update: period=%v", p)
@@ -193,11 +194,60 @@ func (pr *L1Client) GetSyncCommitteesFromTrustedToLatest(ctx context.Context, tr
 		trustedNextSyncCommittee = header.ConsensusUpdate.NextSyncCommittee
 		headers = append(headers, header)
 	}
-	lfh.TrustedSyncCommittee = &lctypes.TrustedSyncCommittee{
+	claimed.TrustedSyncCommittee = &lctypes.TrustedSyncCommittee{
 		SyncCommittee: trustedCurrentSyncCommittee,
 		IsNext:        false,
 	}
-	return append(headers, lfh), nil
+	return append(headers, claimed), nil
+}
+
+// GetSyncCommitteesFromClaimedToLatest returns the sync committee updates needed to transition from
+// the claimed header to the latest finalized header.
+// lcUpdateSnapshot is used for the sync committee update at latestPeriod to ensure consistency with preimage-maker's cached data.
+func (pr *L1Client) GetSyncCommitteesFromClaimedToLatest(
+	ctx context.Context,
+	claimedPeriod uint64,
+	latestPeriod uint64,
+	latest *types.L1Header,
+	lcUpdateSnapshot *beacon.LightClientUpdateData,
+) ([]*types.L1Header, error) {
+	pr.logger.InfoContext(ctx, "GetSyncCommitteesFromClaimedToLatest", "claimedPeriod", claimedPeriod, "latestPeriod", latestPeriod)
+
+	res, err := pr.beaconClient.GetLightClientUpdate(ctx, claimedPeriod)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to get LightClientUpdate: claimedPeriod=%v", claimedPeriod)
+	}
+	if claimedPeriod >= latestPeriod {
+		return nil, fmt.Errorf("claimedPeriod must be less than latestPeriod: claimedPeriod=%v latestPeriod=%v", claimedPeriod, latestPeriod)
+	}
+
+	var (
+		headers                     []*types.L1Header
+		trustedNextSyncCommittee    *lctypes.SyncCommittee
+		trustedCurrentSyncCommittee *lctypes.SyncCommittee
+	)
+	trustedNextSyncCommittee = res.Data.ToProto().NextSyncCommittee
+	for p := claimedPeriod + 1; p <= latestPeriod; p++ {
+		var header *types.L1Header
+		// Use cached snapshot for latestPeriod to ensure consistency with preimage-maker
+		if p == latestPeriod {
+			pr.logger.InfoContext(ctx, "using cached snapshot for sync committee update", "period", p)
+			header, err = pr.buildNextSyncCommitteeUpdateFromData(lcUpdateSnapshot, trustedNextSyncCommittee)
+		} else {
+			header, err = pr.BuildNextSyncCommitteeUpdate(ctx, p, trustedNextSyncCommittee)
+		}
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to build next sync committee update: period=%v", p)
+		}
+		trustedCurrentSyncCommittee = trustedNextSyncCommittee
+		trustedNextSyncCommittee = header.ConsensusUpdate.NextSyncCommittee
+		headers = append(headers, header)
+	}
+	latest.TrustedSyncCommittee = &lctypes.TrustedSyncCommittee{
+		SyncCommittee: trustedCurrentSyncCommittee,
+		IsNext:        false,
+	}
+	return append(headers, latest), nil
 }
 
 func (pr *L1Client) TimestampAt(ctx context.Context, number uint64) (uint64, error) {
@@ -235,8 +285,12 @@ func (pr *L1Client) BuildNextSyncCommitteeUpdate(ctx context.Context, period uin
 	if err != nil {
 		return nil, err
 	}
-	lcUpdate := res.Data.ToProto()
-	executionHeader := &res.Data.FinalizedHeader.Execution
+	return pr.buildNextSyncCommitteeUpdateFromData(&res.Data, trustedNextSyncCommittee)
+}
+
+func (pr *L1Client) buildNextSyncCommitteeUpdateFromData(latestLcUpdateSnapshot *beacon.LightClientUpdateData, trustedNextSyncCommittee *lctypes.SyncCommittee) (*types.L1Header, error) {
+	lcUpdate := latestLcUpdateSnapshot.ToProto()
+	executionHeader := &latestLcUpdateSnapshot.FinalizedHeader.Execution
 	executionUpdate, err := pr.buildExecutionUpdate(executionHeader)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to build execution update")
