@@ -19,6 +19,13 @@ import (
 	"github.com/hyperledger-labs/yui-relayer/log"
 )
 
+// FinalizedL1DataResponse is the response from preimage-maker's /get_finalized_l1 endpoint
+type FinalizedL1DataResponse struct {
+	FinalityUpdate    beacon.LightClientFinalityUpdateResponse `json:"raw_finality_update"`
+	LightClientUpdate beacon.LightClientUpdateResponse         `json:"raw_light_client_update"`
+	Period            uint64                                   `json:"period"`
+}
+
 type InitialState struct {
 	Genesis              beacon.Genesis
 	Slot                 uint64
@@ -72,7 +79,7 @@ func (pr *L1Client) GetFinalizedL1Header(ctx context.Context, l1HeadHash common.
 	}
 
 	// Parse FinalizedL1DataResponse
-	var finalizedL1Data beacon.FinalizedL1DataResponse
+	var finalizedL1Data FinalizedL1DataResponse
 	if err = json.Unmarshal(rawResponse, &finalizedL1Data); err != nil {
 		return nil, 0, nil, errors.Wrap(err, "failed to unmarshal FinalizedL1DataResponse")
 	}
