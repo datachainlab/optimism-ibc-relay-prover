@@ -136,10 +136,3 @@ type SyncCommittee struct {
 	PubKeys         []hexutil.Bytes `json:"pubkeys"`
 	AggregatePubKey hexutil.Bytes   `json:"aggregate_pubkey"`
 }
-
-// FinalizedL1DataResponse is the response from preimage-maker's /get_finalized_l1 endpoint
-type FinalizedL1DataResponse struct {
-	FinalityUpdate    LightClientFinalityUpdateResponse `json:"raw_finality_update"`
-	LightClientUpdate LightClientUpdateResponse         `json:"raw_light_client_update"`
-	Period            uint64                            `json:"period"`
-}
