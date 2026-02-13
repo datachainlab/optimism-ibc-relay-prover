@@ -39,10 +39,10 @@ jobs:
           echo "deb [trusted=yes] https://apt.fury.io/kurtosis-tech/ /" | sudo tee /etc/apt/sources.list.d/kurtosis.list
           sudo apt update
           sudo apt remove kurtosis-cli
-          sudo apt install kurtosis-cli=1.11.1 -V
+          sudo apt install kurtosis-cli=1.15.2 -V
       - name: Download optimism-preimage-maker
         run: |
-          git clone -b v0.3.1 https://github.com/datachainlab/optimism-preimage-maker
+          git clone -b bump_env https://github.com/datachainlab/optimism-preimage-maker
       - name: Start optimism dev net
         run: |
           cd optimism-preimage-maker
