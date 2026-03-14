@@ -53,7 +53,7 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return errors.WithStack(err)
 	}
-	l1Header, _, _, err := config.ProverL1Client.GetFinalizedL1Header(ctx, latestMetadata.L1Head)
+	l1Header, _, lcUpdateSnapshot, err := config.ProverL1Client.GetFinalizedL1Header(ctx, latestMetadata.L1Head)
 	if err != nil {
 		return errors.WithStack(err)
 	}
@@ -68,12 +68,13 @@ func run(ctx context.Context) error {
 		return errors.WithStack(err)
 	}
 	l1Header.TrustedSyncCommittee = &types.TrustedSyncCommittee{
-		IsNext: false,
+		IsNext: true,
 		SyncCommittee: &types.SyncCommittee{
-			Pubkeys:         l1InitialState.CurrentSyncCommittee.Pubkeys,
-			AggregatePubkey: l1InitialState.CurrentSyncCommittee.AggregatePubkey,
+			Pubkeys:         l1InitialState.NextSyncCommittee.Pubkeys,
+			AggregatePubkey: l1InitialState.NextSyncCommittee.AggregatePubkey,
 		},
 	}
+	l1Header.ConsensusUpdate = lcUpdateSnapshot.ToProto()
 
 	// Get resolved
 	resolvedL2, resolvedFaultDisputeGame, resolvedOutputRoot, caller, err := l2.CreateGameProof(ctx, gameType, config, l1Header.ExecutionUpdate, results[0])

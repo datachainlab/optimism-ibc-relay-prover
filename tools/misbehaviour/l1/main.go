@@ -64,7 +64,7 @@ func run(ctx context.Context) error {
 		return errors.WithStack(err)
 	}
 
-	l1Header1, _, _, err := proverL1Client.GetFinalizedL1Header(ctx, latestMetadata.L1Head)
+	l1Header1, _, lcUpdate, err := proverL1Client.GetFinalizedL1Header(ctx, latestMetadata.L1Head)
 	if err != nil {
 		return errors.WithStack(err)
 	}
@@ -83,12 +83,13 @@ func run(ctx context.Context) error {
 	}
 
 	l1Header1.TrustedSyncCommittee = &types.TrustedSyncCommittee{
-		IsNext: false,
+		IsNext: true,
 		SyncCommittee: &types.SyncCommittee{
-			Pubkeys:         l1InitialState.CurrentSyncCommittee.Pubkeys,
-			AggregatePubkey: l1InitialState.CurrentSyncCommittee.AggregatePubkey,
+			Pubkeys:         l1InitialState.NextSyncCommittee.Pubkeys,
+			AggregatePubkey: l1InitialState.NextSyncCommittee.AggregatePubkey,
 		},
 	}
+	l1Header1.ConsensusUpdate = lcUpdate.ToProto()
 	l1Header2.TrustedSyncCommittee = l1Header1.TrustedSyncCommittee
 
 	// Change for misbehavior detection
