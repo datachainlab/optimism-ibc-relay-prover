@@ -227,6 +227,18 @@ func (pr *Prover) CheckRefreshRequired(ctx context.Context, counterparty core.Ch
 }
 
 func (pr *Prover) CreateInitialLightClientState(ctx context.Context, height exported.Height) (exported.ClientState, exported.ConsensusState, error) {
+	clientState, consState, err := pr.createInitialLightClientState(ctx, height)
+	if err != nil {
+		return nil, nil, err
+	}
+	// Verify account storage root is not empty or zero
+	if err = util.VerifyStorageRootNotEmpty(consState.(*types.ConsensusState).StorageRoot); err != nil {
+		return nil, nil, errors.Wrapf(err, "invalid account storage root: number=%d: Wait until the finalized header reaches the height at which the contract was deployed.", clientState.GetLatestHeight().GetRevisionHeight())
+	}
+	return clientState, consState, nil
+}
+
+func (pr *Prover) createInitialLightClientState(ctx context.Context, height exported.Height) (exported.ClientState, exported.ConsensusState, error) {
 	var l2Output *l2.OutputResponse
 	var err error
 	if height != nil {

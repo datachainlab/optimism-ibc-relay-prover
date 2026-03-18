@@ -42,13 +42,17 @@ jobs:
           sudo apt install kurtosis-cli=1.15.2 -V
       - name: Download optimism-preimage-maker
         run: |
-          git clone -b v0.3.2 https://github.com/datachainlab/optimism-preimage-maker
+          git clone -b v0.3.3 https://github.com/datachainlab/optimism-preimage-maker
       - name: Start optimism dev net
         run: |
           cd optimism-preimage-maker
           make chain
           make devnet-up
           make set-port
+      - name: Deploy contracts
+        run: |
+          make set-port
+          make contracts
       - name: Start preimage server
         run: |
           cd optimism-preimage-maker
@@ -60,8 +64,6 @@ jobs:
           sudo rm -rf $HOME/.cache
       - name: Test
         run: |
-          make set-port
-          make contracts
           sleep 180
           go test ./module/...
         env:

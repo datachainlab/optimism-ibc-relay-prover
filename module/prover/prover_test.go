@@ -63,7 +63,7 @@ func (ts *ProverTestSuite) SetupTest() {
 	ts.Require().NoError(err)
 	l2Chain, err := ethereum.NewChain(context.Background(), ethereum.ChainConfig{
 		RpcAddr:    fmt.Sprintf("http://localhost:%d", hostPort.L2GethPort),
-		IbcAddress: common.Bytes2Hex(addressHex),
+		IbcAddress: string(addressHex),
 		Signer:     anySignerConfig,
 	})
 	ts.Require().NoError(err)
@@ -282,7 +282,7 @@ func (ts *ProverTestSuite) TestMakeHeaderChan() {
 // testdata for ELC
 func (ts *ProverTestSuite) outputForELCUpdateClientTest(coreHeader core.Header) {
 	header := coreHeader.(*types.Header)
-	cs, consState, err := ts.prover.CreateInitialLightClientState(context.Background(), header.TrustedHeight)
+	cs, consState, err := ts.prover.createInitialLightClientState(context.Background(), header.TrustedHeight)
 	ts.Require().NoError(err)
 	rawUpdateClient, err := clienttypes.PackClientMessage(header)
 	ts.Require().NoError(err)
@@ -338,7 +338,7 @@ func (ts *ProverTestSuite) outputForELCUpdateClientTest(coreHeader core.Header) 
 
 func (ts *ProverTestSuite) outputForELCL1VerificationTest(headers []core.Header) {
 	first := headers[0].(*types.Header)
-	cs, consState, err := ts.prover.CreateInitialLightClientState(context.Background(), first.TrustedHeight)
+	cs, consState, err := ts.prover.createInitialLightClientState(context.Background(), first.TrustedHeight)
 	ts.Require().NoError(err)
 	rawCs := cs.(*types.ClientState)
 	rawL1Config, err := rawCs.L1Config.Marshal()
