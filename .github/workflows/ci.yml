@@ -53,6 +53,8 @@ jobs:
         run: |
           make set-port
           make contracts
+        env:
+          PREIMAGE_MAKER: ./
       - name: Start preimage server
         run: |
           cd optimism-preimage-maker
