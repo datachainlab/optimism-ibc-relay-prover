@@ -60,7 +60,6 @@ jobs:
           cd optimism-preimage-maker
           make server-up &
           make wait
-          sleep 180
       - name: Clean up cache
         run: |
           sudo rm -rf $HOME/.cargo/registry
