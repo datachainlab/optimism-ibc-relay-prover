@@ -10,6 +10,7 @@ import (
 	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
 	"github.com/cosmos/ibc-go/v8/modules/core/exported"
 	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/relay/ethereum"
+	lctypes "github.com/datachainlab/ethereum-light-client-types/relayer/types"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l1"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l2"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/types"
@@ -28,7 +29,7 @@ type Prover struct {
 	l1Client *l1.L1Client
 
 	trustingPeriod            time.Duration
-	refreshThresholdRate      *types.Fraction
+	refreshThresholdRate      *lctypes.Fraction
 	maxClockDrift             time.Duration
 	maxHeaderConcurrency      uint64
 	disputeGameFactoryAddress common.Address
@@ -215,7 +216,7 @@ func (pr *Prover) CheckRefreshRequired(ctx context.Context, counterparty core.Ch
 
 	elapsedTime := latestTimestamp.Sub(lcLastTimestamp)
 
-	durationMulByFraction := func(d time.Duration, f *types.Fraction) time.Duration {
+	durationMulByFraction := func(d time.Duration, f *lctypes.Fraction) time.Duration {
 		nsec := d.Nanoseconds() * int64(f.Numerator) / int64(f.Denominator)
 		return time.Duration(nsec) * time.Nanosecond
 	}
@@ -411,7 +412,7 @@ func NewProver(chain *ethereum.Chain,
 	l1Client *l1.L1Client,
 	l2Client *l2.L2Client,
 	trustingPeriod time.Duration,
-	refreshThresholdRate *types.Fraction,
+	refreshThresholdRate *lctypes.Fraction,
 	maxClockDrift time.Duration,
 	maxHeaderConcurrency uint64,
 	disputeGameFactoryAddress common.Address,

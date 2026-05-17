@@ -12,6 +12,7 @@ import (
 	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/client"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l1"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l2"
+	lctypes "github.com/datachainlab/ethereum-light-client-types/relayer/types"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/types"
 	bindings2 "github.com/ethereum-optimism/optimism/op-e2e/bindings"
 	"github.com/ethereum-optimism/optimism/op-node/bindings"
@@ -101,7 +102,7 @@ func (config *Config) ToFaultDisputeGameConfig() *types.FaultDisputeGameConfig {
 	}
 }
 
-func CreateMessagePasserAccountProof(ctx context.Context, config *Config, l2BlockNum *big.Int) (*types.AccountUpdate, error) {
+func CreateMessagePasserAccountProof(ctx context.Context, config *Config, l2BlockNum *big.Int) (*lctypes.AccountUpdate, error) {
 	l2ProofGetter, err := client.NewETHClientWith(config.L2Client)
 	if err != nil {
 		return nil, errors.WithStack(err)
@@ -112,7 +113,7 @@ func CreateMessagePasserAccountProof(ctx context.Context, config *Config, l2Bloc
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
-	return &types.AccountUpdate{
+	return &lctypes.AccountUpdate{
 		AccountProof:       mpAccountProof.AccountProofRLP,
 		AccountStorageRoot: mpAccountProof.StorageHash[:],
 	}, nil
@@ -140,7 +141,7 @@ func CreateGameProof(
 	ctx context.Context,
 	targetGameType uint32,
 	config *Config,
-	l1Header *types.ExecutionUpdate,
+	l1Header *lctypes.ExecutionUpdate,
 	gameResult bindings.IDisputeGameFactoryGameSearchResult,
 ) (*big.Int, *types.FaultDisputeGameProof, [32]byte, *bindings2.FaultDisputeGameCaller, error) {
 	gameId := gameResult.Metadata
@@ -198,12 +199,12 @@ func CreateGameProof(
 
 	disputeGameFactoryProof := types.FaultDisputeGameProof{
 		StateRoot: l1Header.StateRoot,
-		DisputeGameFactoryAccount: &types.AccountUpdate{
+		DisputeGameFactoryAccount: &lctypes.AccountUpdate{
 			AccountProof:       disputeGameFactoryAccountProof.AccountProofRLP,
 			AccountStorageRoot: disputeGameFactoryAccountProof.StorageHash[:],
 		},
 		DisputeGameFactoryGameIdProof: disputeGameFactoryAccountProof.StorageProofRLP[0],
-		FaultDisputeGameAccount: &types.AccountUpdate{
+		FaultDisputeGameAccount: &lctypes.AccountUpdate{
 			AccountProof:       faultDisputeGameProof.AccountProofRLP,
 			AccountStorageRoot: faultDisputeGameProof.StorageHash[:],
 		},

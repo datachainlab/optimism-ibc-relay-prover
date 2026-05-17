@@ -9,6 +9,7 @@ import (
 
 	"github.com/cockroachdb/errors"
 	types2 "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
+	lctypes "github.com/datachainlab/ethereum-light-client-types/relayer/types"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l1"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l2"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/types"
@@ -82,9 +83,9 @@ func run(ctx context.Context) error {
 		return errors.WithStack(err)
 	}
 
-	l1Header1.TrustedSyncCommittee = &types.TrustedSyncCommittee{
+	l1Header1.TrustedSyncCommittee = &lctypes.TrustedSyncCommittee{
 		IsNext: true,
-		SyncCommittee: &types.SyncCommittee{
+		SyncCommittee: &lctypes.SyncCommittee{
 			Pubkeys:         l1InitialState.NextSyncCommittee.Pubkeys,
 			AggregatePubkey: l1InitialState.NextSyncCommittee.AggregatePubkey,
 		},
@@ -95,12 +96,13 @@ func run(ctx context.Context) error {
 	// Change for misbehavior detection
 	l1Header2.ConsensusUpdate.FinalizedHeader.ProposerIndex = l1Header1.ConsensusUpdate.FinalizedHeader.ProposerIndex + 1
 
+	trustedHeight := &types2.Height{
+		RevisionNumber: 0,
+		RevisionHeight: 100,
+	}
+	l1Header1.TrustedSyncCommittee.TrustedHeight = trustedHeight
 	misbehaviour := types.FinalizedHeaderMisbehaviour{
-		ClientId: "optimism-01",
-		TrustedHeight: &types2.Height{
-			RevisionNumber: 0,
-			RevisionHeight: 100,
-		},
+		ClientId:             "optimism-01",
 		TrustedSyncCommittee: l1Header1.TrustedSyncCommittee,
 		ConsensusUpdate_1:    l1Header1.ConsensusUpdate,
 		ConsensusUpdate_2:    l1Header2.ConsensusUpdate,
@@ -111,7 +113,7 @@ func run(ctx context.Context) error {
 	}
 
 	cs := &types.ClientState{
-		LatestHeight: misbehaviour.TrustedHeight,
+		LatestHeight: trustedHeight,
 		L1Config:     l1Config,
 	}
 	consState := types.ConsensusState{

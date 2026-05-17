@@ -2,7 +2,10 @@ version: v1
 plugins:
   - name: gocosmos
     out: ..
-    opt: plugins=grpc,Mgoogle/protobuf/any.proto=github.com/cosmos/cosmos-sdk/codec/types
+    opt:
+      - plugins=interfacetype+grpc
+      - Mgoogle/protobuf/any.proto=github.com/cosmos/cosmos-sdk/codec/types
+      - Mibc/lightclients/ethereum/v1/ethereum.proto=github.com/datachainlab/ethereum-light-client-types/relayer/types
   - name: grpc-gateway
     out: ..
     opt: logtostderr=true,allow_colon_final_segments=true

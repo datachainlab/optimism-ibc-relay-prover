@@ -9,6 +9,7 @@ import (
 
 	"github.com/cockroachdb/errors"
 	types2 "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
+	lctypes "github.com/datachainlab/ethereum-light-client-types/relayer/types"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/types"
 	"github.com/datachainlab/optimism-ibc-relay-prover/tools/misbehaviour/l2"
 	"github.com/ethereum/go-ethereum/common"
@@ -67,9 +68,9 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return errors.WithStack(err)
 	}
-	l1Header.TrustedSyncCommittee = &types.TrustedSyncCommittee{
+	l1Header.TrustedSyncCommittee = &lctypes.TrustedSyncCommittee{
 		IsNext: true,
-		SyncCommittee: &types.SyncCommittee{
+		SyncCommittee: &lctypes.SyncCommittee{
 			Pubkeys:         l1InitialState.NextSyncCommittee.Pubkeys,
 			AggregatePubkey: l1InitialState.NextSyncCommittee.AggregatePubkey,
 		},
@@ -100,7 +101,7 @@ func run(ctx context.Context) error {
 	fmt.Printf("submittedL1=%s, currentL1=%d\n", submittedL1EthHeader.Number.String(), l1Header.ExecutionUpdate.BlockNumber)
 
 	submittedL1Header := &types.L1Header{
-		ExecutionUpdate: &types.ExecutionUpdate{
+		ExecutionUpdate: &lctypes.ExecutionUpdate{
 			BlockNumber: submittedL1EthHeader.Number.Uint64(),
 			StateRoot:   submittedL1EthHeader.Root[:],
 		},

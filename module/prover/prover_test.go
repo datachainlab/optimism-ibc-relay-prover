@@ -15,6 +15,7 @@ import (
 	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
 	"github.com/cosmos/ibc-go/v8/modules/core/exported"
 	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/relay/ethereum"
+	lctypes "github.com/datachainlab/ethereum-light-client-types/relayer/types"
 	"github.com/datachainlab/ibc-hd-signer/pkg/hd"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l1"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l2"
@@ -86,7 +87,7 @@ func (ts *ProverTestSuite) SetupTest() {
 
 	trustingPeriod := 86400 * time.Second
 	maxClockDrift := 1 * time.Millisecond
-	refreshThresholdRate := &types.Fraction{
+	refreshThresholdRate := &lctypes.Fraction{
 		Numerator:   1,
 		Denominator: 2,
 	}
@@ -144,7 +145,7 @@ func (ts *ProverTestSuite) TestCheckRefreshRequired() {
 	ts.Require().NoError(err)
 
 	ts.prover.trustingPeriod = time.Duration(latestTimestamp-trustedTimestamp) * time.Second
-	ts.prover.refreshThresholdRate = &types.Fraction{
+	ts.prover.refreshThresholdRate = &lctypes.Fraction{
 		Numerator:   1,
 		Denominator: 1,
 	}

@@ -3,58 +3,27 @@ package l1
 import (
 	"context"
 	"fmt"
-	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l1/beacon"
-	lctypes "github.com/datachainlab/optimism-ibc-relay-prover/module/types"
+
+	"github.com/datachainlab/ethereum-light-client-types/relayer/beacon"
+	lcrelay "github.com/datachainlab/ethereum-light-client-types/relayer/relay"
+	lctypes "github.com/datachainlab/ethereum-light-client-types/relayer/types"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/util"
-)
-
-const (
-	GENESIS_SLOT = 0
-)
-
-// merkle tree's leaf index
-const (
-	EXECUTION_STATE_ROOT_LEAF_INDEX   = 2
-	EXECUTION_BLOCK_NUMBER_LEAF_INDEX = 6
-	EXECUTION_BLOCK_HASH_LEAF_INDEX   = EXECUTION_BLOCK_NUMBER_LEAF_INDEX + 6
-)
-
-// minimal preset
-const (
-	MINIMAL_SECONDS_PER_SLOT                 uint64 = 6
-	MINIMAL_SLOTS_PER_EPOCH                  uint64 = 8
-	MINIMAL_EPOCHS_PER_SYNC_COMMITTEE_PERIOD uint64 = 8
-)
-
-// mainnet preset
-const (
-	MAINNET_SECONDS_PER_SLOT                 uint64 = 12
-	MAINNET_SLOTS_PER_EPOCH                  uint64 = 32
-	MAINNET_EPOCHS_PER_SYNC_COMMITTEE_PERIOD uint64 = 256
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/rlp"
 )
 
 func (pr *L1Client) secondsPerSlot() uint64 {
-	if pr.config.IsMainnetPreset() {
-		return MAINNET_SECONDS_PER_SLOT
-	} else {
-		return MINIMAL_SECONDS_PER_SLOT
-	}
+	return lcrelay.SecondsPerSlot(pr.config.Network)
 }
 
 func (pr *L1Client) slotsPerEpoch() uint64 {
-	if pr.config.IsMainnetPreset() {
-		return MAINNET_SLOTS_PER_EPOCH
-	} else {
-		return MINIMAL_SLOTS_PER_EPOCH
-	}
+	return lcrelay.SlotsPerEpoch(pr.config.Network)
 }
 
 func (pr *L1Client) epochsPerSyncCommitteePeriod() uint64 {
-	if pr.config.IsMainnetPreset() {
-		return MAINNET_EPOCHS_PER_SYNC_COMMITTEE_PERIOD
-	} else {
-		return MINIMAL_EPOCHS_PER_SYNC_COMMITTEE_PERIOD
-	}
+	return lcrelay.EpochsPerSyncCommitteePeriod(pr.config.Network)
 }
 
 // returns the first slot of the period
@@ -81,7 +50,7 @@ func (pr *L1Client) getSlotAtTimestamp(ctx context.Context, timestamp uint64) (u
 		return 0, fmt.Errorf("computeSlotAtTimestamp: timestamp is not multiple of secondsPerSlot: timestamp=%v secondsPerSlot=%v genesisTime=%v", timestamp, pr.secondsPerSlot(), genesis.GenesisTimeSeconds)
 	}
 	slotsSinceGenesis := (timestamp - genesis.GenesisTimeSeconds) / pr.secondsPerSlot()
-	return GENESIS_SLOT + slotsSinceGenesis, nil
+	return lcrelay.GENESIS_SLOT + slotsSinceGenesis, nil
 }
 
 // returns a period corresponding to a given execution block number
@@ -99,15 +68,15 @@ func (pr *L1Client) getPeriodWithBlockNumber(ctx context.Context, blockNumber ui
 }
 
 func (pr *L1Client) buildExecutionUpdate(executionHeader *beacon.ExecutionPayloadHeader) (*lctypes.ExecutionUpdate, error) {
-	stateRootBranch, err := generateExecutionPayloadHeaderProof(executionHeader, EXECUTION_STATE_ROOT_LEAF_INDEX)
+	stateRootBranch, err := lcrelay.GenerateExecutionPayloadHeaderProof(executionHeader, lcrelay.EXECUTION_STATE_ROOT_LEAF_INDEX)
 	if err != nil {
 		return nil, err
 	}
-	blockNumberBranch, err := generateExecutionPayloadHeaderProof(executionHeader, EXECUTION_BLOCK_NUMBER_LEAF_INDEX)
+	blockNumberBranch, err := lcrelay.GenerateExecutionPayloadHeaderProof(executionHeader, lcrelay.EXECUTION_BLOCK_NUMBER_LEAF_INDEX)
 	if err != nil {
 		return nil, err
 	}
-	blockHashBranch, err := generateExecutionPayloadHeaderProof(executionHeader, EXECUTION_BLOCK_HASH_LEAF_INDEX)
+	blockHashBranch, err := lcrelay.GenerateExecutionPayloadHeaderProof(executionHeader, lcrelay.EXECUTION_BLOCK_HASH_LEAF_INDEX)
 	if err != nil {
 		return nil, err
 	}
@@ -119,4 +88,57 @@ func (pr *L1Client) buildExecutionUpdate(executionHeader *beacon.ExecutionPayloa
 		BlockHash:         executionHeader.BlockHash,
 		BlockHashBranch:   blockHashBranch,
 	}, nil
+}
+
+// buildExecutionUpdateFromFinalizedHeader builds ExecutionUpdate from finalized header
+// For pre-Gloas: uses SSZ merkle proofs
+// For Gloas+: uses RLP verification
+func (pr *L1Client) buildExecutionUpdateFromFinalizedHeader(ctx context.Context, finalizedHeader *beacon.LightClientHeader) (*lctypes.ExecutionUpdate, uint64, error) {
+	if finalizedHeader.IsGloas() {
+		return pr.buildExecutionUpdateFromBlockHash(ctx, finalizedHeader.ExecutionBlockHash)
+	}
+	executionHeader := finalizedHeader.Execution
+	executionUpdate, err := pr.buildExecutionUpdate(executionHeader)
+	if err != nil {
+		return nil, 0, err
+	}
+	return executionUpdate, executionHeader.Timestamp, nil
+}
+
+// buildExecutionUpdateFromBlockHash fetches the block header from execution layer
+// using debug_getRawHeader and builds ExecutionUpdate for Gloas fork
+func (pr *L1Client) buildExecutionUpdateFromBlockHash(ctx context.Context, blockHash []byte) (*lctypes.ExecutionUpdate, uint64, error) {
+	hash := common.BytesToHash(blockHash)
+
+	// Fetch RLP-encoded header via debug_getRawHeader
+	rlpHeader, err := pr.getRawHeader(ctx, hash)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to get raw header: %w", err)
+	}
+
+	// Decode RLP to extract state_root and block_number
+	header := new(ethtypes.Header)
+	if err := rlp.DecodeBytes(rlpHeader, header); err != nil {
+		return nil, 0, fmt.Errorf("failed to decode RLP header: %w", err)
+	}
+
+	// For Gloas, we use RLP verification instead of SSZ merkle proofs
+	// The verifier will check: keccak256(rlp) == execution_block_hash
+	return &lctypes.ExecutionUpdate{
+		StateRoot:   header.Root.Bytes(),
+		BlockNumber: header.Number.Uint64(),
+		Rlp:         rlpHeader,
+	}, header.Time, nil
+}
+
+// getRawHeader fetches RLP-encoded block header via debug_getRawHeader
+func (pr *L1Client) getRawHeader(ctx context.Context, blockHash common.Hash) ([]byte, error) {
+	var result hexutil.Bytes
+	err := pr.executionRawClient.CallContext(
+		ctx, &result, "debug_getRawHeader", blockHash,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }

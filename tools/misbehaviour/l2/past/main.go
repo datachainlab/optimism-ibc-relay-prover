@@ -9,6 +9,7 @@ import (
 
 	"github.com/cockroachdb/errors"
 	types2 "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
+	lctypes "github.com/datachainlab/ethereum-light-client-types/relayer/types"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/types"
 	"github.com/datachainlab/optimism-ibc-relay-prover/tools/misbehaviour/l2"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
@@ -68,9 +69,9 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return errors.WithStack(err)
 	}
-	l1Header.TrustedSyncCommittee = &types.TrustedSyncCommittee{
+	l1Header.TrustedSyncCommittee = &lctypes.TrustedSyncCommittee{
 		IsNext: true,
-		SyncCommittee: &types.SyncCommittee{
+		SyncCommittee: &lctypes.SyncCommittee{
 			Pubkeys:         l1InitialState.NextSyncCommittee.Pubkeys,
 			AggregatePubkey: l1InitialState.NextSyncCommittee.AggregatePubkey,
 		},
@@ -185,7 +186,7 @@ func run(ctx context.Context) error {
 	return nil
 }
 
-func createFaultyL2History(ctx context.Context, config *l2.Config, resolvedNum *big.Int, trustedNum *big.Int, consStateMPProof *types.AccountUpdate) ([][]byte, []byte, error) {
+func createFaultyL2History(ctx context.Context, config *l2.Config, resolvedNum *big.Int, trustedNum *big.Int, consStateMPProof *lctypes.AccountUpdate) ([][]byte, []byte, error) {
 
 	// Construct Faulty L2 History
 	faultyL2HistoryRLPs := make([][]byte, 2)
@@ -215,7 +216,7 @@ func createFaultyL2History(ctx context.Context, config *l2.Config, resolvedNum *
 	return faultyL2HistoryRLPs, output[:], nil
 }
 
-func createHonestL2History(ctx context.Context, config *l2.Config, resolvedNum *big.Int, trustedNum *big.Int, consStateMPProof *types.AccountUpdate) ([][]byte, []byte, error) {
+func createHonestL2History(ctx context.Context, config *l2.Config, resolvedNum *big.Int, trustedNum *big.Int, consStateMPProof *lctypes.AccountUpdate) ([][]byte, []byte, error) {
 
 	// Construct Faulty L2 History
 	l2HistoryRLPs := make([][]byte, 2)

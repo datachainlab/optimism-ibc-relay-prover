@@ -1,11 +1,15 @@
 syntax = "proto3";
 package ibc.lightclients.ethereum.v1;
-option go_package = "github.com/datachainlab/optimism-ibc-relay-prover/module/types";
+
+option go_package = "github.com/datachainlab/ethereum-light-client-types/relayer/types";
 import "ibc/core/client/v1/client.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
 
 message TrustedSyncCommittee {
-  SyncCommittee sync_committee = 1;
-  bool is_next = 2;
+  ibc.core.client.v1.Height trusted_height = 1;
+  SyncCommittee sync_committee = 2;
+  bool is_next = 3;
 }
 
 message ForkParameters {
@@ -31,6 +35,7 @@ message ForkSpec {
   uint32 execution_payload_gindex = 4;
   uint32 execution_payload_state_root_gindex = 5;
   uint32 execution_payload_block_number_gindex = 6;
+  uint32 execution_block_hash_gindex = 7;
 }
 
 message ConsensusUpdate {
@@ -60,8 +65,14 @@ message ExecutionUpdate {
   repeated bytes state_root_branch = 2;
   uint64 block_number = 3;
   repeated bytes block_number_branch = 4;
-  bytes block_hash = 5;
-  repeated bytes block_hash_branch = 6;
+  bytes rlp = 5;
+  bytes block_hash = 6;
+  repeated bytes block_hash_branch = 7;
+}
+
+message AccountUpdate {
+  bytes account_proof = 1;
+  bytes account_storage_root = 2;
 }
 
 message BeaconBlockHeader {
@@ -70,20 +81,4 @@ message BeaconBlockHeader {
   bytes parent_root = 3;
   bytes state_root = 4;
   bytes body_root = 5;
-}
-
-message FinalizedHeaderMisbehaviour {
-  string client_id = 1;
-  ibc.core.client.v1.Height trusted_height = 2;
-  TrustedSyncCommittee trusted_sync_committee = 3;
-  ConsensusUpdate consensus_update_1 = 4;
-  ConsensusUpdate consensus_update_2 = 5;
-}
-
-message NextSyncCommitteeMisbehaviour {
-  string client_id = 1;
-  ibc.core.client.v1.Height trusted_height = 2;
-  TrustedSyncCommittee trusted_sync_committee = 3;
-  ConsensusUpdate consensus_update_1 = 4;
-  ConsensusUpdate consensus_update_2 = 5;
 }
