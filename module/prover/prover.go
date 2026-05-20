@@ -287,7 +287,7 @@ func (pr *Prover) createInitialLightClientState(ctx context.Context, height expo
 	clientState := &types.ClientState{
 		ChainId:            chainID.Uint64(),
 		IbcStoreAddress:    pr.l2Client.Config().IBCAddress().Bytes(),
-		IbcCommitmentsSlot: l2.IBCCommitmentsSlot[:],
+		IbcCommitmentsSlot: common.HexToHash("1ee222554989dda120e26ecacf756fe1235cd8d726706b57517715dde4f0c900").Bytes(),
 		LatestHeight:       util.NewHeight(l2Number),
 		Frozen:             false,
 		L1Config:           l1Config,

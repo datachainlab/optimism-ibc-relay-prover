@@ -11,14 +11,12 @@ import (
 
 	"github.com/cockroachdb/errors"
 	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/relay/ethereum"
+	lcrelay "github.com/datachainlab/ethereum-light-client-types/relayer/relay"
 	lctypes "github.com/datachainlab/ethereum-light-client-types/relayer/types"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/util"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/hyperledger-labs/yui-relayer/log"
 )
-
-var IBCCommitmentsSlot = common.HexToHash("1ee222554989dda120e26ecacf756fe1235cd8d726706b57517715dde4f0c900")
 
 type DerivationAttribute struct {
 	L1BlockNumber uint64
@@ -127,13 +125,9 @@ func (c *L2Client) BuildAccountUpdate(ctx context.Context, blockNumber uint64) (
 
 func (c *L2Client) BuildStateProof(ctx context.Context, path []byte, height int64) ([]byte, error) {
 	// calculate slot for commitment
-	storageKey := crypto.Keccak256Hash(append(
-		crypto.Keccak256Hash(path).Bytes(),
-		IBCCommitmentsSlot.Bytes()...,
-	))
-	storageKeyHex, err := storageKey.MarshalText()
+	storageKeyHex, err := lcrelay.IBCCommitmentStorageKey(path).MarshalText()
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to marshal storage key: key=%s, proof=%d", storageKey.Hex(), height)
+		return nil, errors.Wrapf(err, "failed to marshal storage key: path=%x, height=%d", path, height)
 	}
 
 	// call eth_getProof
@@ -144,7 +138,7 @@ func (c *L2Client) BuildStateProof(ctx context.Context, path []byte, height int6
 		big.NewInt(height),
 	)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to get storage proof : key=%s, proof=%d", storageKey.Hex(), height)
+		return nil, errors.Wrapf(err, "failed to get storage proof: path=%x, height=%d", path, height)
 	}
 	return stateProof.StorageProofRLP[0], nil
 }
