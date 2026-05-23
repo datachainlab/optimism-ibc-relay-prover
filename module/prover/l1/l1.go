@@ -269,25 +269,7 @@ func (pr *L1Client) TimestampAt(ctx context.Context, number uint64) (uint64, err
 }
 
 func (pr *L1Client) getBootstrapInPeriod(ctx context.Context, period uint64) (*lctypes.SyncCommittee, error) {
-	slotsPerEpoch := pr.slotsPerEpoch()
-	startSlot := pr.getPeriodBoundarySlot(period)
-	lastSlotInPeriod := pr.getPeriodBoundarySlot(period+1) - 1
-	var errs []error
-	for i := startSlot + slotsPerEpoch; i <= lastSlotInPeriod; i += slotsPerEpoch {
-		res, err := pr.beaconClient.GetBlockRoot(ctx, i, false)
-		if err != nil {
-			errs = append(errs, err)
-			return nil, fmt.Errorf("there is no available bootstrap in period: period=%v err=%v", period, errors.Join(errs...))
-		}
-		bootstrap, err := pr.beaconClient.GetBootstrap(ctx, res.Data.Root[:])
-		if err != nil {
-			errs = append(errs, err)
-			continue
-		} else {
-			return bootstrap.Data.CurrentSyncCommittee.ToProto(), nil
-		}
-	}
-	return nil, fmt.Errorf("failed to get bootstrap in period: period=%v err=%v", period, errors.Join(errs...))
+	return lcrelay.GetBootstrapInPeriod(ctx, pr.beaconClient, pr.config.Network, period)
 }
 
 func (pr *L1Client) BuildNextSyncCommitteeUpdate(ctx context.Context, period uint64, trustedNextSyncCommittee *lctypes.SyncCommittee) (*types.L1Header, error) {
