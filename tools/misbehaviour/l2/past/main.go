@@ -9,7 +9,7 @@ import (
 
 	"github.com/cockroachdb/errors"
 	types2 "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
-	lctypes "github.com/datachainlab/ethereum-light-client-types/relayer/types"
+	lctypes "github.com/datachainlab/ethereum-light-client-types/prover/types"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/types"
 	"github.com/datachainlab/optimism-ibc-relay-prover/tools/misbehaviour/l2"
 	"github.com/ethereum-optimism/optimism/op-service/eth"

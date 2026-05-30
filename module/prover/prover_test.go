@@ -15,7 +15,7 @@ import (
 	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
 	"github.com/cosmos/ibc-go/v8/modules/core/exported"
 	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/relay/ethereum"
-	lctypes "github.com/datachainlab/ethereum-light-client-types/relayer/types"
+	lctypes "github.com/datachainlab/ethereum-light-client-types/prover/types"
 	"github.com/datachainlab/ibc-hd-signer/pkg/hd"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l1"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l2"
@@ -41,6 +41,9 @@ type ProverTestSuite struct {
 }
 
 func TestProverTestSuite(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
 	suite.Run(t, new(ProverTestSuite))
 }
 

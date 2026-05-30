@@ -3,9 +3,9 @@ package l1
 import (
 	"context"
 
-	"github.com/datachainlab/ethereum-light-client-types/relayer/beacon"
-	lcrelay "github.com/datachainlab/ethereum-light-client-types/relayer/relay"
-	lctypes "github.com/datachainlab/ethereum-light-client-types/relayer/types"
+	"github.com/datachainlab/ethereum-light-client-types/prover/beacon"
+	lcrelay "github.com/datachainlab/ethereum-light-client-types/prover/relay"
+	lctypes "github.com/datachainlab/ethereum-light-client-types/prover/types"
 )
 
 func (pr *L1Client) secondsPerSlot() uint64 {

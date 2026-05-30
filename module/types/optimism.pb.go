@@ -9,7 +9,7 @@ import (
 	proto "github.com/cosmos/gogoproto/proto"
 	github_com_cosmos_gogoproto_types "github.com/cosmos/gogoproto/types"
 	types1 "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
-	types "github.com/datachainlab/ethereum-light-client-types/relayer/types"
+	types "github.com/datachainlab/ethereum-light-client-types/prover/types"
 	_ "google.golang.org/protobuf/types/known/durationpb"
 	io "io"
 	math "math"

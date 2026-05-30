@@ -1,8 +1,8 @@
 package l1
 
 import (
-	lcrelay "github.com/datachainlab/ethereum-light-client-types/relayer/relay"
-	lctypes "github.com/datachainlab/ethereum-light-client-types/relayer/types"
+	lcrelay "github.com/datachainlab/ethereum-light-client-types/prover/relay"
+	lctypes "github.com/datachainlab/ethereum-light-client-types/prover/types"
 )
 
 type ProverConfig struct {

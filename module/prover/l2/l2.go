@@ -9,9 +9,9 @@ import (
 
 	"github.com/cockroachdb/errors"
 	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/relay/ethereum"
-	lcexec "github.com/datachainlab/ethereum-light-client-types/relayer/execution"
-	lcrelay "github.com/datachainlab/ethereum-light-client-types/relayer/relay"
-	lctypes "github.com/datachainlab/ethereum-light-client-types/relayer/types"
+	lcexec "github.com/datachainlab/ethereum-light-client-types/prover/execution"
+	lcrelay "github.com/datachainlab/ethereum-light-client-types/prover/relay"
+	lctypes "github.com/datachainlab/ethereum-light-client-types/prover/types"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/hyperledger-labs/yui-relayer/log"

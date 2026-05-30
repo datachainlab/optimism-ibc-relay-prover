@@ -5,7 +5,7 @@ plugins:
     opt:
       - plugins=interfacetype+grpc
       - Mgoogle/protobuf/any.proto=github.com/cosmos/cosmos-sdk/codec/types
-      - Mibc/lightclients/ethereum/v1/ethereum.proto=github.com/datachainlab/ethereum-light-client-types/relayer/types
+      - Mibc/lightclients/ethereum/v1/ethereum.proto=github.com/datachainlab/ethereum-light-client-types/prover/types
   - name: grpc-gateway
     out: ..
     opt: logtostderr=true,allow_colon_final_segments=true

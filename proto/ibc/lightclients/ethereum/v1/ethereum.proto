@@ -1,7 +1,7 @@
 syntax = "proto3";
 package ibc.lightclients.ethereum.v1;
 
-option go_package = "github.com/datachainlab/ethereum-light-client-types/relayer/types";
+option go_package = "github.com/datachainlab/ethereum-light-client-types/prover/types";
 import "ibc/core/client/v1/client.proto";
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/duration.proto";

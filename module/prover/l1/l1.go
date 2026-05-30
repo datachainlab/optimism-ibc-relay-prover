@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/cockroachdb/errors"
-	"github.com/datachainlab/ethereum-light-client-types/relayer/beacon"
-	lcrelay "github.com/datachainlab/ethereum-light-client-types/relayer/relay"
-	lctypes "github.com/datachainlab/ethereum-light-client-types/relayer/types"
+	"github.com/datachainlab/ethereum-light-client-types/prover/beacon"
+	lcrelay "github.com/datachainlab/ethereum-light-client-types/prover/relay"
+	lctypes "github.com/datachainlab/ethereum-light-client-types/prover/types"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/types"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/util"
 	"github.com/ethereum/go-ethereum/common"
