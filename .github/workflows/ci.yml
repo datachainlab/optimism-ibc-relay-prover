@@ -40,14 +40,20 @@ jobs:
           sudo apt update
           sudo apt remove kurtosis-cli
           sudo apt install kurtosis-cli=1.15.2 -V
+      - name: Download optimism-devnet
+        run: |
+          git clone -b v1.1.0 https://github.com/datachainlab/optimism-devnet
       - name: Download optimism-preimage-maker
         run: |
-          git clone -b v0.3.3 https://github.com/datachainlab/optimism-preimage-maker
+          git clone -b v0.3.4 https://github.com/datachainlab/optimism-preimage-maker
       - name: Start optimism dev net
         run: |
+          cd optimism-devnet
+          OP_TAG=op-node/v1.18.1 make chain
+          LODESTAR_VERSION=v1.42.0 make devnet-up
+      - name: Set port
+        run: |
           cd optimism-preimage-maker
-          make chain
-          make devnet-up
           make set-port
       - name: Deploy contracts
         run: |
