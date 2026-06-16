@@ -13,10 +13,14 @@ function saveAddress(contractName, contract) {
     console.log(`${contractName} address:`, contract.target);
 }
 
-async function deploy(deployer, contractName, args = []) {
+// EIP-7825: Gas limit cap (2^24) to avoid eth_estimateGas using block gas limit on Karst-enabled chains
+const GAS_LIMIT = 16777216n;
+
+async function deploy(deployer, contractName, args = [], overrides = {}) {
     const factory = await hre.ethers.getContractFactory(contractName);
     console.log(`Contract ${contractName} deploy start`);
-    const contract = await factory.connect(deployer).deploy(...args);
+    const txOverrides = { gasLimit: GAS_LIMIT, ...overrides };
+    const contract = await factory.connect(deployer).deploy(...args, txOverrides);
     await contract.waitForDeployment();
     saveAddress(contractName, contract)
     return contract;
@@ -62,7 +66,7 @@ async function main() {
 
     // deploy client
     const mockClient = await deploy(deployer, "MockClient", [ibcHandler.target]);
-    await ibcHandler.registerClient("mock-client", mockClient.target).then(tx => tx.wait());
+    await ibcHandler.registerClient("mock-client", mockClient.target, { gasLimit: GAS_LIMIT }).then(tx => tx.wait());
 
 }
 
