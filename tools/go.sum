@@ -430,6 +430,11 @@ github.com/danieljoos/wincred v1.1.2 h1:QLdCxFs1/Yl4zduvBdcHB8goaYk9RARS2SgLLRuA
 github.com/danieljoos/wincred v1.1.2/go.mod h1:GijpziifJoIBfYh+S7BbkdUTU4LfM+QnGqR5Vl2tAx0=
 github.com/datachainlab/ethereum-ibc-relay-chain v0.3.18 h1:bfHPAZv7BXCWjlnhiWuBifhA65C81x23GtSjsyZINss=
 github.com/datachainlab/ethereum-ibc-relay-chain v0.3.18/go.mod h1:Hqfxa2dcbK7P6yheoVwu09q8rN1kiC1HxSL0S9K4dDU=
+github.com/datachainlab/ethereum-light-client-types v0.1.0-rc1/go.mod h1:cyMva2xUH+vXOmqas1aoZMQ2YO/GZzYQ3hWudEdxIiw=
+github.com/datachainlab/ethereum-light-client-types v0.1.0-rc2 h1:4a4/f0ayTfGF7RGsq942c9xLqH3haKToZIcDuP7Q2EI=
+github.com/datachainlab/ethereum-light-client-types v0.1.0-rc2/go.mod h1:cyMva2xUH+vXOmqas1aoZMQ2YO/GZzYQ3hWudEdxIiw=
+github.com/datachainlab/ethereum-light-client-types v0.1.0-rc3 h1:cTGkrzKZ0c1UA0ULasOwcOPFfM9gbspVVdb1RLPAVps=
+github.com/datachainlab/ethereum-light-client-types v0.1.0-rc3/go.mod h1:cyMva2xUH+vXOmqas1aoZMQ2YO/GZzYQ3hWudEdxIiw=
 github.com/datachainlab/ethereum-light-client-types/relayer v0.1.8 h1:ia9zVdZe/dODdnmC1SnV57OwN3LEznb6WnX/6WFyeEg=
 github.com/datachainlab/ethereum-light-client-types/relayer v0.1.8/go.mod h1:GdQoZwZO/3k4vCw1uwKW9HsGoToWP9HQ22haIT3untw=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
