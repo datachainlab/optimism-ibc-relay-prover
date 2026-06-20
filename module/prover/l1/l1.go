@@ -181,6 +181,9 @@ func (pr *L1Client) GetSyncCommitteesFromAgreedToClaimed(
 			return nil, errors.Wrap(err, "failed to get bootstrap")
 		}
 		claimed.TrustedSyncCommittee = &lctypes.TrustedSyncCommittee{
+			// trusted_height is unused for the L1 light client but required by the
+			// shared TrustedSyncCommittee proto; revision_number must be 0.
+			TrustedHeight: util.NewHeight(0),
 			SyncCommittee: bootstrapRes.Data.CurrentSyncCommittee.ToProto(),
 			IsNext:        false,
 		}
@@ -205,6 +208,7 @@ func (pr *L1Client) GetSyncCommitteesFromAgreedToClaimed(
 		headers = append(headers, header)
 	}
 	claimed.TrustedSyncCommittee = &lctypes.TrustedSyncCommittee{
+		TrustedHeight: util.NewHeight(0),
 		SyncCommittee: trustedCurrentSyncCommittee,
 		IsNext:        false,
 	}
@@ -254,6 +258,7 @@ func (pr *L1Client) GetSyncCommitteesFromClaimedToLatest(
 		headers = append(headers, header)
 	}
 	latest.TrustedSyncCommittee = &lctypes.TrustedSyncCommittee{
+		TrustedHeight: util.NewHeight(0),
 		SyncCommittee: trustedCurrentSyncCommittee,
 		IsNext:        false,
 	}
@@ -296,6 +301,7 @@ func (pr *L1Client) buildNextSyncCommitteeUpdateFromData(ctx context.Context, la
 
 	return &types.L1Header{
 		TrustedSyncCommittee: &lctypes.TrustedSyncCommittee{
+			TrustedHeight: util.NewHeight(0),
 			SyncCommittee: trustedNextSyncCommittee,
 			IsNext:        true,
 		},
