@@ -15,6 +15,7 @@ import (
 	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
 	"github.com/cosmos/ibc-go/v8/modules/core/exported"
 	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/relay/ethereum"
+	lctypes "github.com/datachainlab/ethereum-light-client-types/prover/types"
 	"github.com/datachainlab/ibc-hd-signer/pkg/hd"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l1"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l2"
@@ -40,6 +41,9 @@ type ProverTestSuite struct {
 }
 
 func TestProverTestSuite(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
 	suite.Run(t, new(ProverTestSuite))
 }
 
@@ -86,7 +90,7 @@ func (ts *ProverTestSuite) SetupTest() {
 
 	trustingPeriod := 86400 * time.Second
 	maxClockDrift := 1 * time.Millisecond
-	refreshThresholdRate := &types.Fraction{
+	refreshThresholdRate := &lctypes.Fraction{
 		Numerator:   1,
 		Denominator: 2,
 	}
@@ -144,7 +148,7 @@ func (ts *ProverTestSuite) TestCheckRefreshRequired() {
 	ts.Require().NoError(err)
 
 	ts.prover.trustingPeriod = time.Duration(latestTimestamp-trustedTimestamp) * time.Second
-	ts.prover.refreshThresholdRate = &types.Fraction{
+	ts.prover.refreshThresholdRate = &lctypes.Fraction{
 		Numerator:   1,
 		Denominator: 1,
 	}
@@ -314,9 +318,6 @@ func (ts *ProverTestSuite) outputForELCUpdateClientTest(coreHeader core.Header) 
 	println("consState", common.Bytes2Hex(encodedConsState))
 	println("now", time.Now().Unix())
 
-	td := len(header.TrustedToDeterministic) > 1 && header.TrustedToDeterministic[0].ExecutionUpdate.BlockNumber != header.TrustedToDeterministic[len(header.TrustedToDeterministic)-1].ExecutionUpdate.BlockNumber
-	pl := len(header.DeterministicToLatest) > 1 && header.DeterministicToLatest[0].ExecutionUpdate.BlockNumber != header.DeterministicToLatest[len(header.DeterministicToLatest)-1].ExecutionUpdate.BlockNumber
-
 	for i, t2d := range header.TrustedToDeterministic {
 		println("t2d", i, t2d.ExecutionUpdate.BlockNumber)
 	}
@@ -324,16 +325,22 @@ func (ts *ProverTestSuite) outputForELCUpdateClientTest(coreHeader core.Header) 
 		println("d2t", i, d2t.ExecutionUpdate.BlockNumber)
 	}
 
-	// Change file name according to the number of TrustedToDeterministic and DeterministicToLatest
-	tdPart := "t"
-	if td {
-		tdPart = "td"
+	// The optimism-elc e2e test reads the client message from the .bin and the
+	// initial state (client_state / consensus_state / now) from the .json.
+	ts.Require().NoError(os.WriteFile("update_client_header.bin", encodedUpdateClient, 0644))
+
+	output := struct {
+		Now            int64  `json:"now"`
+		ClientState    string `json:"client_state"`
+		ConsensusState string `json:"consensus_state"`
+	}{
+		Now:            time.Now().Unix(),
+		ClientState:    common.Bytes2Hex(encodedCs),
+		ConsensusState: common.Bytes2Hex(encodedConsState),
 	}
-	plPart := "l"
-	if pl {
-		plPart = "pl"
-	}
-	ts.Require().NoError(os.WriteFile(fmt.Sprintf("update_client_header_%s_%s.bin", tdPart, plPart), encodedUpdateClient, 0644))
+	encodedOutput, err := json.MarshalIndent(output, "", "  ")
+	ts.Require().NoError(err)
+	ts.Require().NoError(os.WriteFile("update_client_header.json", encodedOutput, 0644))
 }
 
 func (ts *ProverTestSuite) outputForELCL1VerificationTest(headers []core.Header) {

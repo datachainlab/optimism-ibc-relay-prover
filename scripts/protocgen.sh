@@ -5,7 +5,8 @@ set -eo pipefail
 echo "Generating gogo proto code"
 cd proto
 
-buf generate --template buf.gen.gogo.yaml $file
+# Generate code, excluding ethereum.proto (imported from ethereum-light-client-types)
+buf generate --template buf.gen.gogo.yaml --exclude-path ibc/lightclients/ethereum/v1/ethereum.proto
 
 cd ..
 
@@ -13,4 +14,4 @@ cd ..
 cp -r github.com/datachainlab/optimism-ibc-relay-prover/* ./
 rm -rf github.com
 
-go mod tidy
+# go mod tidy is run separately after proto generation
