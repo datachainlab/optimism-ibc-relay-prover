@@ -8,7 +8,7 @@ require (
 	github.com/cockroachdb/errors v1.11.3
 	github.com/cosmos/ibc-go/v8 v8.2.1
 	github.com/datachainlab/ethereum-ibc-relay-chain v0.3.18
-	github.com/datachainlab/ethereum-light-client-types v0.1.0-rc5
+	github.com/datachainlab/ethereum-light-client-types v0.2.0
 	github.com/datachainlab/optimism-ibc-relay-prover v0.0.0-00010101000000-000000000000
 	github.com/ethereum-optimism/optimism v1.13.1
 	github.com/ethereum/go-ethereum v1.15.3
