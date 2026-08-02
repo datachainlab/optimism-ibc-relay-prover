@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"os"
@@ -9,6 +10,8 @@ import (
 
 	"github.com/cockroachdb/errors"
 	types2 "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
+	lcrelay "github.com/datachainlab/ethereum-light-client-types/prover/relay"
+	lctypes "github.com/datachainlab/ethereum-light-client-types/prover/types"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/types"
 	"github.com/datachainlab/optimism-ibc-relay-prover/tools/misbehaviour/l2"
 	"github.com/ethereum/go-ethereum/common"
@@ -57,6 +60,18 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return errors.WithStack(err)
 	}
+	// The LatestL1Header must be self-consistent: ConsensusUpdate, ExecutionUpdate
+	// and Timestamp must all describe the same finalized header. The snapshot update
+	// carries the next_sync_committee needed for L1 verification, so build all three
+	// from the snapshot's finalized header (GetFinalizedL1Header builds the execution
+	// update / timestamp from the finality update, whose finalized header may differ).
+	l1Header.ConsensusUpdate = lcUpdateSnapshot.ToProto()
+	snapshotExecutionUpdate, snapshotTimestamp, err := lcrelay.BuildExecutionUpdateFromFinalizedHeader(&lcUpdateSnapshot.FinalizedHeader, true)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	l1Header.ExecutionUpdate = snapshotExecutionUpdate
+	l1Header.Timestamp = snapshotTimestamp
 	fmt.Printf("l1 state root=%s\n", common.Bytes2Hex(l1Header.ExecutionUpdate.StateRoot))
 
 	l1InitialState, err := config.ProverL1Client.BuildInitialState(ctx, l1Header.ExecutionUpdate.BlockNumber)
@@ -67,14 +82,16 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return errors.WithStack(err)
 	}
-	l1Header.TrustedSyncCommittee = &types.TrustedSyncCommittee{
-		IsNext: true,
-		SyncCommittee: &types.SyncCommittee{
+	l1Header.TrustedSyncCommittee = &lctypes.TrustedSyncCommittee{
+		// L1 verification ignores the height, but TrustedSyncCommittee::validate
+		// requires it to be present with revision_number == 0.
+		TrustedHeight: &types2.Height{RevisionNumber: 0, RevisionHeight: 0},
+		IsNext:        true,
+		SyncCommittee: &lctypes.SyncCommittee{
 			Pubkeys:         l1InitialState.NextSyncCommittee.Pubkeys,
 			AggregatePubkey: l1InitialState.NextSyncCommittee.AggregatePubkey,
 		},
 	}
-	l1Header.ConsensusUpdate = lcUpdateSnapshot.ToProto()
 
 	// Get resolved
 	resolvedL2, resolvedFaultDisputeGame, resolvedOutputRoot, caller, err := l2.CreateGameProof(ctx, gameType, config, l1Header.ExecutionUpdate, results[0])
@@ -100,7 +117,7 @@ func run(ctx context.Context) error {
 	fmt.Printf("submittedL1=%s, currentL1=%d\n", submittedL1EthHeader.Number.String(), l1Header.ExecutionUpdate.BlockNumber)
 
 	submittedL1Header := &types.L1Header{
-		ExecutionUpdate: &types.ExecutionUpdate{
+		ExecutionUpdate: &lctypes.ExecutionUpdate{
 			BlockNumber: submittedL1EthHeader.Number.Uint64(),
 			StateRoot:   submittedL1EthHeader.Root[:],
 		},
@@ -171,6 +188,25 @@ func run(ctx context.Context) error {
 	fmt.Printf("ClientState: %s\n", common.Bytes2Hex(csBytes))
 	fmt.Printf("ConsState: %s\n", common.Bytes2Hex(consStateBytes))
 	fmt.Printf("now: %d\n", time.Now().Unix())
+
+	// The optimism-elc e2e test reads the client message from the .bin and the
+	// initial state (client_state / consensus_state / now) from the .json.
+	output := struct {
+		Now            int64  `json:"now"`
+		ClientState    string `json:"client_state"`
+		ConsensusState string `json:"consensus_state"`
+	}{
+		Now:            time.Now().Unix(),
+		ClientState:    common.Bytes2Hex(csBytes),
+		ConsensusState: common.Bytes2Hex(consStateBytes),
+	}
+	encodedOutput, err := json.MarshalIndent(output, "", "  ")
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	if err = os.WriteFile("submit_misbehaviour_future.json", encodedOutput, 0644); err != nil {
+		return errors.WithStack(err)
+	}
 
 	misbehaviour.TrustedHeight.RevisionHeight = resolvedL2.Uint64()
 	clientMessage, err = types2.PackClientMessage(&misbehaviour)

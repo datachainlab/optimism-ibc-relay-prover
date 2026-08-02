@@ -9,13 +9,14 @@ import (
 	"time"
 
 	"github.com/cockroachdb/errors"
-	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l1/beacon"
+	"github.com/datachainlab/ethereum-light-client-types/prover/beacon"
+	lcrelay "github.com/datachainlab/ethereum-light-client-types/prover/relay"
+	lctypes "github.com/datachainlab/ethereum-light-client-types/prover/types"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/types"
-	lctypes "github.com/datachainlab/optimism-ibc-relay-prover/module/types"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/util"
 	"github.com/ethereum/go-ethereum/common"
-	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/hyperledger-labs/yui-relayer/log"
 )
 
@@ -38,6 +39,7 @@ type InitialState struct {
 type L1Client struct {
 	beaconClient            beacon.Client
 	executionClient         *ethclient.Client
+	executionRawClient      *rpc.Client
 	preimageMakerHttpClient *util.HTTPClient
 	preimageMakerEndpoint   *util.Selector[string]
 	config                  *ProverConfig
@@ -62,10 +64,6 @@ func (pr *L1Client) BuildL1Config(state *InitialState, maxClockDrift, trustingPe
 	}, nil
 }
 
-func (pr *L1Client) GetLatestETHHeader(ctx context.Context) (*ethtypes.Header, error) {
-	return pr.executionClient.HeaderByNumber(ctx, nil)
-}
-
 func (pr *L1Client) GetFinalizedL1Header(ctx context.Context, l1HeadHash common.Hash) (*types.L1Header, uint64, *beacon.LightClientUpdateData, error) {
 
 	// Get finalized L1 data from optimism-preimage-maker
@@ -85,25 +83,24 @@ func (pr *L1Client) GetFinalizedL1Header(ctx context.Context, l1HeadHash common.
 	}
 
 	lcUpdateSnapshot := &finalizedL1Data.LightClientUpdate.Data
+	finalizedHeader := &finalizedL1Data.FinalityUpdate.Data.FinalizedHeader
 
 	// Build L1Header from finality_update
 	lcUpdate := finalizedL1Data.FinalityUpdate.Data.ToProto()
-	executionHeader := &finalizedL1Data.FinalityUpdate.Data.FinalizedHeader.Execution
-	executionUpdate, err := pr.buildExecutionUpdate(executionHeader)
+
+	executionUpdate, timestamp, err := pr.buildExecutionUpdateFromFinalizedHeader(ctx, finalizedHeader)
 	if err != nil {
-		return nil, 0, nil, errors.Wrap(err, "failed to build execution update")
+		return nil, 0, nil, errors.Wrap(err, "failed to build execution update from finalized header")
 	}
-	executionRoot, err := executionHeader.HashTreeRoot()
-	if err != nil {
-		return nil, 0, nil, errors.Wrap(err, "failed to calculate execution root")
-	}
-	if !bytes.Equal(executionRoot[:], lcUpdate.FinalizedExecutionRoot) {
+
+	executionRoot := finalizedHeader.GetExecutionRoot()
+	if !bytes.Equal(executionRoot, lcUpdate.FinalizedExecutionRoot) {
 		return nil, 0, nil, fmt.Errorf("execution root mismatch: %X != %X", executionRoot, lcUpdate.FinalizedExecutionRoot)
 	}
 	return &types.L1Header{
 		ConsensusUpdate: lcUpdate,
 		ExecutionUpdate: executionUpdate,
-		Timestamp:       executionHeader.Timestamp,
+		Timestamp:       timestamp,
 	}, finalizedL1Data.Period, lcUpdateSnapshot, nil
 }
 
@@ -127,13 +124,19 @@ func (pr *L1Client) BuildInitialState(ctx context.Context, blockNumber uint64) (
 		return nil, errors.Wrapf(err, "failed to get genesis")
 	}
 
+	// Get timestamp from finalized header
+	_, timestamp, err := pr.buildExecutionUpdateFromFinalizedHeader(ctx, &res.Data.FinalizedHeader)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to build execution update from finalized header")
+	}
+
 	return &InitialState{
 		Genesis:              *genesis,
 		Slot:                 uint64(res.Data.FinalizedHeader.Beacon.Slot),
 		Period:               period,
 		CurrentSyncCommittee: *currentSyncCommittee,
 		NextSyncCommittee:    *nextSyncCommittee,
-		Timestamp:            res.Data.FinalizedHeader.Execution.Timestamp,
+		Timestamp:            timestamp,
 	}, nil
 }
 
@@ -178,6 +181,9 @@ func (pr *L1Client) GetSyncCommitteesFromAgreedToClaimed(
 			return nil, errors.Wrap(err, "failed to get bootstrap")
 		}
 		claimed.TrustedSyncCommittee = &lctypes.TrustedSyncCommittee{
+			// trusted_height is unused for the L1 light client but required by the
+			// shared TrustedSyncCommittee proto; revision_number must be 0.
+			TrustedHeight: util.NewHeight(0),
 			SyncCommittee: bootstrapRes.Data.CurrentSyncCommittee.ToProto(),
 			IsNext:        false,
 		}
@@ -202,6 +208,7 @@ func (pr *L1Client) GetSyncCommitteesFromAgreedToClaimed(
 		headers = append(headers, header)
 	}
 	claimed.TrustedSyncCommittee = &lctypes.TrustedSyncCommittee{
+		TrustedHeight: util.NewHeight(0),
 		SyncCommittee: trustedCurrentSyncCommittee,
 		IsNext:        false,
 	}
@@ -239,7 +246,7 @@ func (pr *L1Client) GetSyncCommitteesFromClaimedToLatest(
 		// Use cached snapshot for latestPeriod to ensure consistency with preimage-maker
 		if p == latestPeriod {
 			pr.logger.InfoContext(ctx, "using cached snapshot for sync committee update", "period", p)
-			header, err = pr.buildNextSyncCommitteeUpdateFromData(lcUpdateSnapshot, trustedNextSyncCommittee)
+			header, err = pr.buildNextSyncCommitteeUpdateFromData(ctx, lcUpdateSnapshot, trustedNextSyncCommittee)
 		} else {
 			header, err = pr.BuildNextSyncCommitteeUpdate(ctx, p, trustedNextSyncCommittee)
 		}
@@ -251,6 +258,7 @@ func (pr *L1Client) GetSyncCommitteesFromClaimedToLatest(
 		headers = append(headers, header)
 	}
 	latest.TrustedSyncCommittee = &lctypes.TrustedSyncCommittee{
+		TrustedHeight: util.NewHeight(0),
 		SyncCommittee: trustedCurrentSyncCommittee,
 		IsNext:        false,
 	}
@@ -266,25 +274,7 @@ func (pr *L1Client) TimestampAt(ctx context.Context, number uint64) (uint64, err
 }
 
 func (pr *L1Client) getBootstrapInPeriod(ctx context.Context, period uint64) (*lctypes.SyncCommittee, error) {
-	slotsPerEpoch := pr.slotsPerEpoch()
-	startSlot := pr.getPeriodBoundarySlot(period)
-	lastSlotInPeriod := pr.getPeriodBoundarySlot(period+1) - 1
-	var errs []error
-	for i := startSlot + slotsPerEpoch; i <= lastSlotInPeriod; i += slotsPerEpoch {
-		res, err := pr.beaconClient.GetBlockRoot(ctx, i, false)
-		if err != nil {
-			errs = append(errs, err)
-			return nil, fmt.Errorf("there is no available bootstrap in period: period=%v err=%v", period, errors.Join(errs...))
-		}
-		bootstrap, err := pr.beaconClient.GetBootstrap(ctx, res.Data.Root[:])
-		if err != nil {
-			errs = append(errs, err)
-			continue
-		} else {
-			return bootstrap.Data.CurrentSyncCommittee.ToProto(), nil
-		}
-	}
-	return nil, fmt.Errorf("failed to get bootstrap in period: period=%v err=%v", period, errors.Join(errs...))
+	return lcrelay.GetBootstrapInPeriod(ctx, pr.beaconClient, pr.config.Network, period)
 }
 
 func (pr *L1Client) BuildNextSyncCommitteeUpdate(ctx context.Context, period uint64, trustedNextSyncCommittee *lctypes.SyncCommittee) (*types.L1Header, error) {
@@ -292,32 +282,32 @@ func (pr *L1Client) BuildNextSyncCommitteeUpdate(ctx context.Context, period uin
 	if err != nil {
 		return nil, err
 	}
-	return pr.buildNextSyncCommitteeUpdateFromData(&res.Data, trustedNextSyncCommittee)
+	return pr.buildNextSyncCommitteeUpdateFromData(ctx, &res.Data, trustedNextSyncCommittee)
 }
 
-func (pr *L1Client) buildNextSyncCommitteeUpdateFromData(latestLcUpdateSnapshot *beacon.LightClientUpdateData, trustedNextSyncCommittee *lctypes.SyncCommittee) (*types.L1Header, error) {
+func (pr *L1Client) buildNextSyncCommitteeUpdateFromData(ctx context.Context, latestLcUpdateSnapshot *beacon.LightClientUpdateData, trustedNextSyncCommittee *lctypes.SyncCommittee) (*types.L1Header, error) {
 	lcUpdate := latestLcUpdateSnapshot.ToProto()
-	executionHeader := &latestLcUpdateSnapshot.FinalizedHeader.Execution
-	executionUpdate, err := pr.buildExecutionUpdate(executionHeader)
+	finalizedHeader := &latestLcUpdateSnapshot.FinalizedHeader
+
+	executionUpdate, timestamp, err := pr.buildExecutionUpdateFromFinalizedHeader(ctx, finalizedHeader)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to build execution update")
+		return nil, errors.Wrap(err, "failed to build execution update from finalized header")
 	}
-	executionRoot, err := executionHeader.HashTreeRoot()
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to calculate execution root")
-	}
-	if !bytes.Equal(executionRoot[:], lcUpdate.FinalizedExecutionRoot) {
+
+	executionRoot := finalizedHeader.GetExecutionRoot()
+	if !bytes.Equal(executionRoot, lcUpdate.FinalizedExecutionRoot) {
 		return nil, fmt.Errorf("execution root mismatch: %X != %X", executionRoot, lcUpdate.FinalizedExecutionRoot)
 	}
 
 	return &types.L1Header{
 		TrustedSyncCommittee: &lctypes.TrustedSyncCommittee{
+			TrustedHeight: util.NewHeight(0),
 			SyncCommittee: trustedNextSyncCommittee,
 			IsNext:        true,
 		},
 		ConsensusUpdate: lcUpdate,
 		ExecutionUpdate: executionUpdate,
-		Timestamp:       executionHeader.Timestamp,
+		Timestamp:       timestamp,
 	}, nil
 }
 
@@ -326,25 +316,27 @@ func NewL1Client(ctx context.Context, l1BeaconEndpoint, l1ExecutionEndpoint stri
 	preimageMakerEndpoint string,
 	minimalForkSched map[string]uint64, logger *log.RelayLogger) (*L1Client, error) {
 	beaconClient := beacon.NewClient(l1BeaconEndpoint)
-	executionClient, err := ethclient.DialContext(ctx, l1ExecutionEndpoint)
+	executionRawClient, err := rpc.DialContext(ctx, l1ExecutionEndpoint)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to create L1Client")
+		return nil, errors.Wrap(err, "failed to create L1Client raw rpc")
 	}
+	executionClient := ethclient.NewClient(executionRawClient)
 	chainID, err := executionClient.ChainID(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get chainId on L1Client")
 	}
 
-	network := Minimal
+	network := lcrelay.Minimal
 	if chainID.Uint64() == 1 {
-		network = Mainnet
+		network = lcrelay.Mainnet
 	} else if chainID.Uint64() == 11155111 {
-		network = Sepolia
+		network = lcrelay.Sepolia
 	}
 
 	return &L1Client{
 		beaconClient:            beaconClient,
 		executionClient:         executionClient,
+		executionRawClient:      executionRawClient,
 		preimageMakerHttpClient: util.NewHTTPClient(preimageMakerTimeout),
 		preimageMakerEndpoint:   util.NewSelector(strings.Split(preimageMakerEndpoint, ",")),
 		config: &ProverConfig{

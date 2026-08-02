@@ -31,3 +31,4 @@ tests/contracts/cache
 
 hostPort.json
 **/hardhat.config.js
+*.json

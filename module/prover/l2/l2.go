@@ -2,23 +2,20 @@ package l2
 
 import (
 	"context"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"math/big"
 	"strings"
 	"time"
 
 	"github.com/cockroachdb/errors"
 	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/relay/ethereum"
-	lctypes "github.com/datachainlab/optimism-ibc-relay-prover/module/types"
+	lcexec "github.com/datachainlab/ethereum-light-client-types/prover/execution"
+	lcrelay "github.com/datachainlab/ethereum-light-client-types/prover/relay"
+	lctypes "github.com/datachainlab/ethereum-light-client-types/prover/types"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/util"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/hyperledger-labs/yui-relayer/log"
 )
-
-var IBCCommitmentsSlot = common.HexToHash("1ee222554989dda120e26ecacf756fe1235cd8d726706b57517715dde4f0c900")
 
 type DerivationAttribute struct {
 	L1BlockNumber uint64
@@ -101,50 +98,13 @@ func (c *L2Client) GetPreimage(ctx context.Context, request *PreimageMetadata) (
 }
 
 func (c *L2Client) TimestampAt(ctx context.Context, number uint64) (uint64, error) {
-	header, err := c.Chain.Client().HeaderByNumber(ctx, util.NewBigInt(number))
-	if err != nil {
-		return 0, errors.Wrapf(err, "failed to get block from number: number=%d", number)
-	}
-	return header.Time, nil
+	return lcexec.GetBlockTimestamp(ctx, c.Chain.Client(), number)
 }
 
 func (c *L2Client) BuildAccountUpdate(ctx context.Context, blockNumber uint64) (*lctypes.AccountUpdate, error) {
-	proof, err := c.Chain.Client().GetProof(
-		ctx,
-		c.Chain.Config().IBCAddress(),
-		nil,
-		util.NewBigInt(blockNumber),
-	)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to get account proof: number=%d", blockNumber)
-	}
-	c.logger.InfoContext(ctx, "buildAccountUpdate: get proof", "block_number", blockNumber, "ibc_address", c.Chain.Config().IBCAddress().String(), "account_proof", hex.EncodeToString(proof.AccountProofRLP), "storage_hash", hex.EncodeToString(proof.StorageHash[:]))
-	return &lctypes.AccountUpdate{
-		AccountProof:       proof.AccountProofRLP,
-		AccountStorageRoot: proof.StorageHash[:],
-	}, nil
+	return lcrelay.BuildAccountUpdate(ctx, proofClient{c.Chain.Client()}, c.Chain.Config().IBCAddress(), blockNumber)
 }
 
 func (c *L2Client) BuildStateProof(ctx context.Context, path []byte, height int64) ([]byte, error) {
-	// calculate slot for commitment
-	storageKey := crypto.Keccak256Hash(append(
-		crypto.Keccak256Hash(path).Bytes(),
-		IBCCommitmentsSlot.Bytes()...,
-	))
-	storageKeyHex, err := storageKey.MarshalText()
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to marshal storage key: key=%s, proof=%d", storageKey.Hex(), height)
-	}
-
-	// call eth_getProof
-	stateProof, err := c.Chain.Client().GetProof(
-		ctx,
-		c.Chain.Config().IBCAddress(),
-		[][]byte{storageKeyHex},
-		big.NewInt(height),
-	)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to get storage proof : key=%s, proof=%d", storageKey.Hex(), height)
-	}
-	return stateProof.StorageProofRLP[0], nil
+	return lcrelay.BuildStateProof(ctx, proofClient{c.Chain.Client()}, c.Chain.Config().IBCAddress(), path, height)
 }
