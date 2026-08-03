@@ -21,9 +21,12 @@ func (prc *ProverConfig) getForkParameters() *lctypes.ForkParameters {
 	return params
 }
 
-// convertToEthpandaopsForkVersions converts standard minimal fork versions to ethpandaops format
+// convertToEthpandaopsForkVersions converts standard minimal fork versions to ethpandaops format.
+// Ethpandaops reserves 0x10 for the genesis version and bumps each subsequent fork by 0x10,
+// so the standard-minimal fork ordinal n (Altair=1 .. Fulu=6) maps to (n+1)*0x10.
 // Standard minimal: GenesisForkVersion={0,0,0,1}, Fork.Version={n,0,0,1}
-// Ethpandaops:      GenesisForkVersion={0x10,0,0,0x38}, Fork.Version={n*0x10,0,0,0x38}
+// Ethpandaops:      GenesisForkVersion={0x10,0,0,0x38}, Fork.Version={(n+1)*0x10,0,0,0x38}
+// (genesis=0x10, Altair=0x20, Bellatrix=0x30, Capella=0x40, Deneb=0x50, Electra=0x60, Fulu=0x70)
 func convertToEthpandaopsForkVersions(params *lctypes.ForkParameters) *lctypes.ForkParameters {
 	// Convert genesis fork version: {0,0,0,1} -> {0x10,0,0,0x38}
 	newGenesis := make([]byte, 4)
@@ -31,12 +34,12 @@ func convertToEthpandaopsForkVersions(params *lctypes.ForkParameters) *lctypes.F
 	newGenesis[0] = 0x10
 	newGenesis[3] = 0x38
 
-	// Convert each fork version: {n,0,0,1} -> {n*0x10,0,0,0x38}
+	// Convert each fork version: {n,0,0,1} -> {(n+1)*0x10,0,0,0x38}
 	newForks := make([]*lctypes.Fork, len(params.Forks))
 	for i, fork := range params.Forks {
 		newVersion := make([]byte, 4)
 		copy(newVersion, fork.Version)
-		newVersion[0] = fork.Version[0] * 0x10
+		newVersion[0] = (fork.Version[0] + 1) * 0x10
 		newVersion[3] = 0x38
 
 		newForks[i] = &lctypes.Fork{

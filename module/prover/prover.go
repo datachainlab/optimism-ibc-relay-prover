@@ -10,6 +10,7 @@ import (
 	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
 	"github.com/cosmos/ibc-go/v8/modules/core/exported"
 	"github.com/datachainlab/ethereum-ibc-relay-chain/pkg/relay/ethereum"
+	lcrelay "github.com/datachainlab/ethereum-light-client-types/prover/relay"
 	lctypes "github.com/datachainlab/ethereum-light-client-types/prover/types"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l1"
 	"github.com/datachainlab/optimism-ibc-relay-prover/module/prover/l2"
@@ -287,7 +288,7 @@ func (pr *Prover) createInitialLightClientState(ctx context.Context, height expo
 	clientState := &types.ClientState{
 		ChainId:            chainID.Uint64(),
 		IbcStoreAddress:    pr.l2Client.Config().IBCAddress().Bytes(),
-		IbcCommitmentsSlot: common.HexToHash("1ee222554989dda120e26ecacf756fe1235cd8d726706b57517715dde4f0c900").Bytes(),
+		IbcCommitmentsSlot: lcrelay.IBCCommitmentsSlot(),
 		LatestHeight:       util.NewHeight(l2Number),
 		Frozen:             false,
 		L1Config:           l1Config,

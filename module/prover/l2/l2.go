@@ -102,9 +102,9 @@ func (c *L2Client) TimestampAt(ctx context.Context, number uint64) (uint64, erro
 }
 
 func (c *L2Client) BuildAccountUpdate(ctx context.Context, blockNumber uint64) (*lctypes.AccountUpdate, error) {
-	return lcrelay.BuildAccountUpdate(ctx, c.Chain.Client(), c.Chain.Config().IBCAddress(), blockNumber)
+	return lcrelay.BuildAccountUpdate(ctx, proofClient{c.Chain.Client()}, c.Chain.Config().IBCAddress(), blockNumber)
 }
 
 func (c *L2Client) BuildStateProof(ctx context.Context, path []byte, height int64) ([]byte, error) {
-	return lcrelay.BuildStateProof(ctx, c.Chain.Client(), c.Chain.Config().IBCAddress(), path, height)
+	return lcrelay.BuildStateProof(ctx, proofClient{c.Chain.Client()}, c.Chain.Config().IBCAddress(), path, height)
 }

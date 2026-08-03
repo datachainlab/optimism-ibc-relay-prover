@@ -1,4 +1,4 @@
 .PHONY:deploy
 deploy:
-	npm i
+	npm ci
 	npx hardhat run ./scripts/deploy.js --network op_local1

@@ -318,9 +318,6 @@ func (ts *ProverTestSuite) outputForELCUpdateClientTest(coreHeader core.Header) 
 	println("consState", common.Bytes2Hex(encodedConsState))
 	println("now", time.Now().Unix())
 
-	td := len(header.TrustedToDeterministic) > 1 && header.TrustedToDeterministic[0].ExecutionUpdate.BlockNumber != header.TrustedToDeterministic[len(header.TrustedToDeterministic)-1].ExecutionUpdate.BlockNumber
-	pl := len(header.DeterministicToLatest) > 1 && header.DeterministicToLatest[0].ExecutionUpdate.BlockNumber != header.DeterministicToLatest[len(header.DeterministicToLatest)-1].ExecutionUpdate.BlockNumber
-
 	for i, t2d := range header.TrustedToDeterministic {
 		println("t2d", i, t2d.ExecutionUpdate.BlockNumber)
 	}
@@ -328,16 +325,22 @@ func (ts *ProverTestSuite) outputForELCUpdateClientTest(coreHeader core.Header) 
 		println("d2t", i, d2t.ExecutionUpdate.BlockNumber)
 	}
 
-	// Change file name according to the number of TrustedToDeterministic and DeterministicToLatest
-	tdPart := "t"
-	if td {
-		tdPart = "td"
+	// The optimism-elc e2e test reads the client message from the .bin and the
+	// initial state (client_state / consensus_state / now) from the .json.
+	ts.Require().NoError(os.WriteFile("update_client_header.bin", encodedUpdateClient, 0644))
+
+	output := struct {
+		Now            int64  `json:"now"`
+		ClientState    string `json:"client_state"`
+		ConsensusState string `json:"consensus_state"`
+	}{
+		Now:            time.Now().Unix(),
+		ClientState:    common.Bytes2Hex(encodedCs),
+		ConsensusState: common.Bytes2Hex(encodedConsState),
 	}
-	plPart := "l"
-	if pl {
-		plPart = "pl"
-	}
-	ts.Require().NoError(os.WriteFile(fmt.Sprintf("update_client_header_%s_%s.bin", tdPart, plPart), encodedUpdateClient, 0644))
+	encodedOutput, err := json.MarshalIndent(output, "", "  ")
+	ts.Require().NoError(err)
+	ts.Require().NoError(os.WriteFile("update_client_header.json", encodedOutput, 0644))
 }
 
 func (ts *ProverTestSuite) outputForELCL1VerificationTest(headers []core.Header) {
