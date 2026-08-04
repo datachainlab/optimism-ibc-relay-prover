@@ -36,6 +36,11 @@ type InitialState struct {
 	NextSyncCommittee    lctypes.SyncCommittee
 }
 
+type ProverConfig struct {
+	Network          string
+	MinimalForkSched map[string]uint64
+}
+
 type L1Client struct {
 	beaconClient            beacon.Client
 	executionClient         *ethclient.Client
@@ -51,7 +56,7 @@ func (pr *L1Client) BuildL1Config(state *InitialState, maxClockDrift, trustingPe
 		GenesisValidatorsRoot:        state.Genesis.GenesisValidatorsRoot[:],
 		MinSyncCommitteeParticipants: 1,
 		GenesisTime:                  state.Genesis.GenesisTimeSeconds,
-		ForkParameters:               pr.config.getForkParameters(),
+		ForkParameters:               lcrelay.GetForkParameters(pr.config.Network, pr.config.MinimalForkSched),
 		SecondsPerSlot:               pr.secondsPerSlot(),
 		SlotsPerEpoch:                pr.slotsPerEpoch(),
 		EpochsPerSyncCommitteePeriod: pr.epochsPerSyncCommitteePeriod(),
@@ -326,7 +331,9 @@ func NewL1Client(ctx context.Context, l1BeaconEndpoint, l1ExecutionEndpoint stri
 		return nil, errors.Wrap(err, "failed to get chainId on L1Client")
 	}
 
-	network := lcrelay.Minimal
+	// devnets are built by ethpandaops/ethereum-package, which uses its own
+	// fork version scheme on top of the minimal preset
+	network := lcrelay.MinimalEthpandaops
 	if chainID.Uint64() == 1 {
 		network = lcrelay.Mainnet
 	} else if chainID.Uint64() == 11155111 {

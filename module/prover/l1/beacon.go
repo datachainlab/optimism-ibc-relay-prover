@@ -41,5 +41,5 @@ func (pr *L1Client) getPeriodWithBlockNumber(ctx context.Context, blockNumber ui
 }
 
 func (pr *L1Client) buildExecutionUpdateFromFinalizedHeader(ctx context.Context, finalizedHeader *beacon.LightClientHeader) (*lctypes.ExecutionUpdate, uint64, error) {
-	return lcrelay.BuildExecutionUpdateFromFinalizedHeader(finalizedHeader, true)
+	return lcrelay.BuildExecutionUpdateFromFinalizedHeader(ctx, pr.executionRawClient, finalizedHeader, true)
 }

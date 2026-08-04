@@ -66,7 +66,7 @@ func run(ctx context.Context) error {
 	// from the snapshot's finalized header (GetFinalizedL1Header builds the execution
 	// update / timestamp from the finality update, whose finalized header may differ).
 	l1Header.ConsensusUpdate = lcUpdateSnapshot.ToProto()
-	snapshotExecutionUpdate, snapshotTimestamp, err := lcrelay.BuildExecutionUpdateFromFinalizedHeader(&lcUpdateSnapshot.FinalizedHeader, true)
+	snapshotExecutionUpdate, snapshotTimestamp, err := lcrelay.BuildExecutionUpdateFromFinalizedHeader(ctx, config.L1Client.Client(), &lcUpdateSnapshot.FinalizedHeader, true)
 	if err != nil {
 		return errors.WithStack(err)
 	}
