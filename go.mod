@@ -9,7 +9,7 @@ require (
 	github.com/cosmos/gogoproto v1.4.11
 	github.com/cosmos/ibc-go/v8 v8.2.1
 	github.com/datachainlab/ethereum-ibc-relay-chain v0.3.18
-	github.com/datachainlab/ethereum-light-client-types v0.3.0-rc1
+	github.com/datachainlab/ethereum-light-client-types v0.3.0-rc2
 	github.com/datachainlab/ibc-hd-signer v0.1.2
 	github.com/ethereum/go-ethereum v1.14.12
 	github.com/hyperledger-labs/yui-relayer v0.5.16
