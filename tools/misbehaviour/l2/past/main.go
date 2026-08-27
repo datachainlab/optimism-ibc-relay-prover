@@ -236,6 +236,22 @@ func run(ctx context.Context) error {
 		return errors.WithStack(err)
 	}
 	fmt.Printf("honest output root: %s\n", common.Bytes2Hex(honestOutput))
+
+	// The honest history only contradicts nothing if the trusted consensus state is the one
+	// it starts from, so the not-misbehaviour case needs its own initial state.
+	consState.OutputRoot = honestOutput
+	notMisbehaviourConsStateBytes, err := consState.Marshal()
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	output.ConsensusState = common.Bytes2Hex(notMisbehaviourConsStateBytes)
+	encodedOutput, err = json.MarshalIndent(output, "", "  ")
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	if err = os.WriteFile("submit_misbehaviour_not_misbehaviour.json", encodedOutput, 0644); err != nil {
+		return errors.WithStack(err)
+	}
 	return nil
 }
 
