@@ -430,8 +430,8 @@ github.com/danieljoos/wincred v1.1.2 h1:QLdCxFs1/Yl4zduvBdcHB8goaYk9RARS2SgLLRuA
 github.com/danieljoos/wincred v1.1.2/go.mod h1:GijpziifJoIBfYh+S7BbkdUTU4LfM+QnGqR5Vl2tAx0=
 github.com/datachainlab/ethereum-ibc-relay-chain v0.3.18 h1:bfHPAZv7BXCWjlnhiWuBifhA65C81x23GtSjsyZINss=
 github.com/datachainlab/ethereum-ibc-relay-chain v0.3.18/go.mod h1:Hqfxa2dcbK7P6yheoVwu09q8rN1kiC1HxSL0S9K4dDU=
-github.com/datachainlab/ethereum-light-client-types v0.2.3 h1:azJZWIHtmmHSAGqwa6HqZ9JZOmEpEBGWm+Y02xzUCLg=
-github.com/datachainlab/ethereum-light-client-types v0.2.3/go.mod h1:kiG87OmoYZZMnOPHk/ZKls2Z5hzb47+w3xpzJakZYCI=
+github.com/datachainlab/ethereum-light-client-types v0.3.0-rc2 h1:uvlP6hIPAa4WN4EITW0aVbF5J2CzvqkN15VRobWe+Qk=
+github.com/datachainlab/ethereum-light-client-types v0.3.0-rc2/go.mod h1:kiG87OmoYZZMnOPHk/ZKls2Z5hzb47+w3xpzJakZYCI=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1VwoXQT9A3Wy9MM3WgvqSxFWenqJduM=
