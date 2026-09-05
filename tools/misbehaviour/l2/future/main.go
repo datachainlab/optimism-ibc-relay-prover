@@ -42,7 +42,10 @@ func run(ctx context.Context) error {
 	if start < 0 {
 		return errors.Errorf("Insufficient games start=%d", start)
 	}
-	gameType := uint32(1) // Permission Cannon in local netk
+	gameType, err := l2.GameType()
+	if err != nil {
+		return errors.WithStack(err)
+	}
 	results, err := config.DisputeGameFactoryCaller.FindLatestGames(nil, gameType, big.NewInt(start), big.NewInt(1))
 	if err != nil {
 		return errors.WithStack(err)
@@ -94,10 +97,27 @@ func run(ctx context.Context) error {
 	}
 
 	// Get resolved
-	resolvedL2, resolvedFaultDisputeGame, resolvedOutputRoot, caller, err := l2.CreateGameProof(ctx, gameType, config, l1Header.ExecutionUpdate, results[0])
+	superRoot, resolvedFaultDisputeGame, caller, err := l2.CreateGameProof(ctx, gameType, config, l1Header.ExecutionUpdate, results[0])
 	if err != nil {
 		return errors.WithStack(err)
 	}
+	// A Super Root game identifies its proposal by timestamp. The trusted consensus
+	// state has to sit before it, so anchor it one L2 block earlier.
+	resolvedL2, err := l2.FindL2BlockByTimestamp(ctx, config.L2Client, superRoot.Timestamp)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	trustedL2Num := new(big.Int).Sub(resolvedL2, big.NewInt(1))
+	trustedL2Header, err := config.L2Client.HeaderByNumber(ctx, trustedL2Num)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	l2ChainID, err := config.L2Client.ChainID(ctx)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	fmt.Printf("resolved l2=%d timestamp=%d, trusted l2=%d timestamp=%d\n",
+		resolvedL2, superRoot.Timestamp, trustedL2Num, trustedL2Header.Time)
 
 	// Get sealedAt
 	submittedL1, err := caller.L1Head(nil)
@@ -122,7 +142,7 @@ func run(ctx context.Context) error {
 			StateRoot:   submittedL1EthHeader.Root[:],
 		},
 	}
-	_, sealedFaultDisputeGame, _, _, err := l2.CreateGameProof(ctx, gameType, config, submittedL1Header.ExecutionUpdate, results[0])
+	_, sealedFaultDisputeGame, _, err := l2.CreateGameProof(ctx, gameType, config, submittedL1Header.ExecutionUpdate, results[0])
 	if err != nil {
 		return errors.WithStack(err)
 	}
@@ -139,11 +159,10 @@ func run(ctx context.Context) error {
 		ClientId: "optimism-01",
 		TrustedHeight: &types2.Height{
 			RevisionNumber: 0,
-			RevisionHeight: resolvedL2.Uint64() - 1,
+			RevisionHeight: trustedL2Num.Uint64(),
 		},
 		LatestL1Header:        l1Header,
-		ResolvedL2Number:      resolvedL2.Uint64(),
-		ResolvedOutputRoot:    resolvedOutputRoot[:],
+		SuperRootProof:        superRoot.Raw,
 		FaultDisputeGameProof: resolvedFaultDisputeGame,
 		SubmittedL1Proof:      sealedFaultDisputeGame,
 		L1HeaderHistory:       l1History,
@@ -154,13 +173,17 @@ func run(ctx context.Context) error {
 	}
 
 	cs := &types.ClientState{
+		// the light client picks this chain's output root out of the super root proof by chain id
+		ChainId:                l2ChainID.Uint64(),
 		LatestHeight:           misbehaviour.TrustedHeight,
 		L1Config:               l1Config,
 		FaultDisputeGameConfig: config.ToFaultDisputeGameConfig(),
 	}
 
 	consState := types.ConsensusState{
-		OutputRoot:             make([]byte, 32), // unused
+		OutputRoot: make([]byte, 32), // unused
+		// The light client compares this against the resolved super root's timestamp
+		Timestamp:              trustedL2Header.Time,
 		L1Slot:                 l1InitialState.Slot,
 		L1CurrentSyncCommittee: l1InitialState.CurrentSyncCommittee.AggregatePubkey,
 		L1NextSyncCommittee:    l1InitialState.NextSyncCommittee.AggregatePubkey,
@@ -208,16 +231,20 @@ func run(ctx context.Context) error {
 		return errors.WithStack(err)
 	}
 
-	misbehaviour.TrustedHeight.RevisionHeight = resolvedL2.Uint64()
-	clientMessage, err = types2.PackClientMessage(&misbehaviour)
+	// The future case triggers on the timestamp of the resolved super root, so the
+	// not-misbehaviour counterpart is the same client message replayed against a trusted
+	// consensus state that already covers that timestamp.
+	consState.Timestamp = superRoot.Timestamp
+	notMisbehaviourConsStateBytes, err := consState.Marshal()
 	if err != nil {
 		return errors.WithStack(err)
 	}
-	misbehaviourBytes, err = clientMessage.Marshal()
+	output.ConsensusState = common.Bytes2Hex(notMisbehaviourConsStateBytes)
+	encodedOutput, err = json.MarshalIndent(output, "", "  ")
 	if err != nil {
 		return errors.WithStack(err)
 	}
-	if err = os.WriteFile("submit_misbehaviour_not_misbehaviour_future.bin", misbehaviourBytes, 0644); err != nil {
+	if err = os.WriteFile("submit_misbehaviour_not_misbehaviour_future.json", encodedOutput, 0644); err != nil {
 		return errors.WithStack(err)
 	}
 	return nil
