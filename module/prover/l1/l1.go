@@ -36,6 +36,11 @@ type InitialState struct {
 	NextSyncCommittee    lctypes.SyncCommittee
 }
 
+type ProverConfig struct {
+	Network          string
+	MinimalForkSched map[string]uint64
+}
+
 type L1Client struct {
 	beaconClient            beacon.Client
 	executionClient         *ethclient.Client
@@ -51,7 +56,7 @@ func (pr *L1Client) BuildL1Config(state *InitialState, maxClockDrift, trustingPe
 		GenesisValidatorsRoot:        state.Genesis.GenesisValidatorsRoot[:],
 		MinSyncCommitteeParticipants: 1,
 		GenesisTime:                  state.Genesis.GenesisTimeSeconds,
-		ForkParameters:               pr.config.getForkParameters(),
+		ForkParameters:               lcrelay.GetForkParameters(pr.config.Network, pr.config.MinimalForkSched),
 		SecondsPerSlot:               pr.secondsPerSlot(),
 		SlotsPerEpoch:                pr.slotsPerEpoch(),
 		EpochsPerSyncCommitteePeriod: pr.epochsPerSyncCommitteePeriod(),
@@ -88,7 +93,7 @@ func (pr *L1Client) GetFinalizedL1Header(ctx context.Context, l1HeadHash common.
 	// Build L1Header from finality_update
 	lcUpdate := finalizedL1Data.FinalityUpdate.Data.ToProto()
 
-	executionUpdate, timestamp, err := pr.buildExecutionUpdateFromFinalizedHeader(ctx, finalizedHeader)
+	executionUpdate, err := pr.buildExecutionUpdateFromFinalizedHeader(ctx, finalizedHeader)
 	if err != nil {
 		return nil, 0, nil, errors.Wrap(err, "failed to build execution update from finalized header")
 	}
@@ -100,7 +105,6 @@ func (pr *L1Client) GetFinalizedL1Header(ctx context.Context, l1HeadHash common.
 	return &types.L1Header{
 		ConsensusUpdate: lcUpdate,
 		ExecutionUpdate: executionUpdate,
-		Timestamp:       timestamp,
 	}, finalizedL1Data.Period, lcUpdateSnapshot, nil
 }
 
@@ -124,10 +128,16 @@ func (pr *L1Client) BuildInitialState(ctx context.Context, blockNumber uint64) (
 		return nil, errors.Wrapf(err, "failed to get genesis")
 	}
 
-	// Get timestamp from finalized header
-	_, timestamp, err := pr.buildExecutionUpdateFromFinalizedHeader(ctx, &res.Data.FinalizedHeader)
+	// The initial timestamp must be produced the same way the light client derives it when
+	// it applies an update, otherwise the first update's trusting-period check is measured
+	// from a different clock.
+	executionUpdate, err := pr.buildExecutionUpdateFromFinalizedHeader(ctx, &res.Data.FinalizedHeader)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to build execution update from finalized header")
+	}
+	timestamp, err := lcrelay.ExecutionHeaderTimestamp(&res.Data.FinalizedHeader, executionUpdate)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to get execution header timestamp")
 	}
 
 	return &InitialState{
@@ -289,7 +299,7 @@ func (pr *L1Client) buildNextSyncCommitteeUpdateFromData(ctx context.Context, la
 	lcUpdate := latestLcUpdateSnapshot.ToProto()
 	finalizedHeader := &latestLcUpdateSnapshot.FinalizedHeader
 
-	executionUpdate, timestamp, err := pr.buildExecutionUpdateFromFinalizedHeader(ctx, finalizedHeader)
+	executionUpdate, err := pr.buildExecutionUpdateFromFinalizedHeader(ctx, finalizedHeader)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to build execution update from finalized header")
 	}
@@ -307,7 +317,6 @@ func (pr *L1Client) buildNextSyncCommitteeUpdateFromData(ctx context.Context, la
 		},
 		ConsensusUpdate: lcUpdate,
 		ExecutionUpdate: executionUpdate,
-		Timestamp:       timestamp,
 	}, nil
 }
 
@@ -326,7 +335,9 @@ func NewL1Client(ctx context.Context, l1BeaconEndpoint, l1ExecutionEndpoint stri
 		return nil, errors.Wrap(err, "failed to get chainId on L1Client")
 	}
 
-	network := lcrelay.Minimal
+	// devnets are built by ethpandaops/ethereum-package, which uses its own
+	// fork version scheme on top of the minimal preset
+	network := lcrelay.MinimalEthpandaops
 	if chainID.Uint64() == 1 {
 		network = lcrelay.Mainnet
 	} else if chainID.Uint64() == 11155111 {

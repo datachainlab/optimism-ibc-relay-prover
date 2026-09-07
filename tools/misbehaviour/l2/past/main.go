@@ -43,7 +43,10 @@ func run(ctx context.Context) error {
 	if start < 0 {
 		return errors.Errorf("Insufficient games start=%d", start)
 	}
-	gameType := uint32(1) // Permission Cannon in local net
+	gameType, err := l2.GameType()
+	if err != nil {
+		return errors.WithStack(err)
+	}
 	results, err := config.DisputeGameFactoryCaller.FindLatestGames(nil, gameType, big.NewInt(start), big.NewInt(1))
 	if err != nil {
 		return errors.WithStack(err)
@@ -61,18 +64,17 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return errors.WithStack(err)
 	}
-	// The LatestL1Header must be self-consistent: ConsensusUpdate, ExecutionUpdate
-	// and Timestamp must all describe the same finalized header. The snapshot update
+	// The LatestL1Header must be self-consistent: ConsensusUpdate and ExecutionUpdate
+	// must describe the same finalized header. The snapshot update
 	// carries the next_sync_committee needed for L1 verification, so build all three
 	// from the snapshot's finalized header (GetFinalizedL1Header builds the execution
-	// update / timestamp from the finality update, whose finalized header may differ).
+	// update from the finality update, whose finalized header may differ).
 	l1Header.ConsensusUpdate = lcUpdateSnapshot.ToProto()
-	snapshotExecutionUpdate, snapshotTimestamp, err := lcrelay.BuildExecutionUpdateFromFinalizedHeader(&lcUpdateSnapshot.FinalizedHeader, true)
+	snapshotExecutionUpdate, err := lcrelay.BuildExecutionUpdateFromFinalizedHeader(ctx, config.L1Client.Client(), &lcUpdateSnapshot.FinalizedHeader, true)
 	if err != nil {
 		return errors.WithStack(err)
 	}
 	l1Header.ExecutionUpdate = snapshotExecutionUpdate
-	l1Header.Timestamp = snapshotTimestamp
 	fmt.Printf("l1 state root=%s\n", common.Bytes2Hex(l1Header.ExecutionUpdate.StateRoot))
 
 	l1InitialState, err := config.ProverL1Client.BuildInitialState(ctx, l1Header.ExecutionUpdate.BlockNumber)
@@ -95,10 +97,25 @@ func run(ctx context.Context) error {
 	}
 
 	// Get resolved
-	resolvedL2, resolvedFaultDisputeGame, resolvedOutputRoot, _, err := l2.CreateGameProof(ctx, gameType, config, l1Header.ExecutionUpdate, results[0])
+	superRoot, resolvedFaultDisputeGame, _, err := l2.CreateGameProof(ctx, gameType, config, l1Header.ExecutionUpdate, results[0])
 	if err != nil {
 		return errors.WithStack(err)
 	}
+	// A Super Root game identifies its proposal by timestamp, so resolve it back to the
+	// L2 block the light client's header history has to end at.
+	resolvedL2, err := l2.FindL2BlockByTimestamp(ctx, config.L2Client, superRoot.Timestamp)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	l2ChainID, err := config.L2Client.ChainID(ctx)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	resolvedOutputRoot, err := superRoot.OutputRootOf(l2ChainID)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	fmt.Printf("resolved l2=%d timestamp=%d outputRoot=%s\n", resolvedL2, superRoot.Timestamp, resolvedOutputRoot.String())
 	trustedL2Num := big.NewInt(resolvedL2.Int64() + 1)
 
 	consStateMPProof, err := l2.CreateMessagePasserAccountProof(ctx, config, trustedL2Num)
@@ -124,8 +141,7 @@ func run(ctx context.Context) error {
 		LatestL1Header:                  l1Header,
 		FirstL2ToL1MessagePasserAccount: consStateMPProof,
 		LastL2ToL1MessagePasserAccount:  resolvedMPProof,
-		ResolvedL2Number:                resolvedL2.Uint64(),
-		ResolvedOutputRoot:              resolvedOutputRoot[:],
+		SuperRootProof:                  superRoot.Raw,
 		L2HeaderHistory:                 faultyL2History,
 		FaultDisputeGameProof:           resolvedFaultDisputeGame,
 	}
@@ -135,6 +151,8 @@ func run(ctx context.Context) error {
 	}
 
 	cs := &types.ClientState{
+		// the light client picks this chain's output root out of the super root proof by chain id
+		ChainId:                l2ChainID.Uint64(),
 		LatestHeight:           misbehaviour.TrustedHeight,
 		L1Config:               l1Config,
 		FaultDisputeGameConfig: config.ToFaultDisputeGameConfig(),
@@ -201,8 +219,7 @@ func run(ctx context.Context) error {
 		LatestL1Header:                  l1Header,
 		FirstL2ToL1MessagePasserAccount: consStateMPProof,
 		LastL2ToL1MessagePasserAccount:  resolvedMPProof,
-		ResolvedL2Number:                resolvedL2.Uint64(),
-		ResolvedOutputRoot:              resolvedOutputRoot[:],
+		SuperRootProof:                  superRoot.Raw,
 		L2HeaderHistory:                 honestL2History,
 		FaultDisputeGameProof:           resolvedFaultDisputeGame,
 	}
@@ -218,6 +235,22 @@ func run(ctx context.Context) error {
 		return errors.WithStack(err)
 	}
 	fmt.Printf("honest output root: %s\n", common.Bytes2Hex(honestOutput))
+
+	// The honest history only contradicts nothing if the trusted consensus state is the one
+	// it starts from, so the not-misbehaviour case needs its own initial state.
+	consState.OutputRoot = honestOutput
+	notMisbehaviourConsStateBytes, err := consState.Marshal()
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	output.ConsensusState = common.Bytes2Hex(notMisbehaviourConsStateBytes)
+	encodedOutput, err = json.MarshalIndent(output, "", "  ")
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	if err = os.WriteFile("submit_misbehaviour_not_misbehaviour.json", encodedOutput, 0644); err != nil {
+		return errors.WithStack(err)
+	}
 	return nil
 }
 
