@@ -36,6 +36,6 @@ func (pr *L1Client) getSlotAtTimestamp(ctx context.Context, timestamp uint64) (u
 	return lcrelay.GetSlotAtTimestamp(ctx, pr.beaconClient, pr.config.Network, timestamp)
 }
 
-func (pr *L1Client) buildExecutionUpdateFromFinalizedHeader(ctx context.Context, finalizedHeader *beacon.LightClientHeader) (*lctypes.ExecutionUpdate, uint64, error) {
+func (pr *L1Client) buildExecutionUpdateFromFinalizedHeader(ctx context.Context, finalizedHeader *beacon.LightClientHeader) (*lctypes.ExecutionUpdate, error) {
 	return lcrelay.BuildExecutionUpdateFromFinalizedHeader(ctx, pr.executionRawClient, finalizedHeader, true)
 }

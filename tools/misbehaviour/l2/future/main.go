@@ -63,18 +63,17 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return errors.WithStack(err)
 	}
-	// The LatestL1Header must be self-consistent: ConsensusUpdate, ExecutionUpdate
-	// and Timestamp must all describe the same finalized header. The snapshot update
+	// The LatestL1Header must be self-consistent: ConsensusUpdate and ExecutionUpdate
+	// must describe the same finalized header. The snapshot update
 	// carries the next_sync_committee needed for L1 verification, so build all three
 	// from the snapshot's finalized header (GetFinalizedL1Header builds the execution
-	// update / timestamp from the finality update, whose finalized header may differ).
+	// update from the finality update, whose finalized header may differ).
 	l1Header.ConsensusUpdate = lcUpdateSnapshot.ToProto()
-	snapshotExecutionUpdate, snapshotTimestamp, err := lcrelay.BuildExecutionUpdateFromFinalizedHeader(ctx, config.L1Client.Client(), &lcUpdateSnapshot.FinalizedHeader, true)
+	snapshotExecutionUpdate, err := lcrelay.BuildExecutionUpdateFromFinalizedHeader(ctx, config.L1Client.Client(), &lcUpdateSnapshot.FinalizedHeader, true)
 	if err != nil {
 		return errors.WithStack(err)
 	}
 	l1Header.ExecutionUpdate = snapshotExecutionUpdate
-	l1Header.Timestamp = snapshotTimestamp
 	fmt.Printf("l1 state root=%s\n", common.Bytes2Hex(l1Header.ExecutionUpdate.StateRoot))
 
 	l1InitialState, err := config.ProverL1Client.BuildInitialState(ctx, l1Header.ExecutionUpdate.BlockNumber)
