@@ -45,7 +45,7 @@ jobs:
           git clone -b v1.5.0 https://github.com/datachainlab/optimism-devnet
       - name: Download optimism-preimage-maker
         run: |
-          git clone -b v0.4.0 https://github.com/datachainlab/optimism-preimage-maker
+          git clone -b v0.4.2 https://github.com/datachainlab/optimism-preimage-maker
       - name: Start optimism dev net
         run: |
           cd optimism-devnet
