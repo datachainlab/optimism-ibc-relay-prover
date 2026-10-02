@@ -7,9 +7,9 @@ on:
   pull_request:
 
 env:
-  # v1.6.0-rc3 runs L1 on the official geth release and pins op-node itself.
+  # The devnet runs L1 on the official geth release and pins op-node itself.
   DEVNET_REF: v1.6.0-rc4
-  PREIMAGE_MAKER_REF: 0.5.0-rc1
+  PREIMAGE_MAKER_REF: 0.5.0-rc2
   # Must match what optimism-devnet's kurtosis SDK expects (see its README).
   KURTOSIS_VERSION: 1.18.1
 
