@@ -6,6 +6,17 @@ on:
       - main
   pull_request:
 
+env:
+  # The devnet runs L1 on the official geth release.
+  DEVNET_REF: v1.6.0-rc5
+  # The op-stack tag the devnet builds from. Must match what the preimage maker at
+  # PREIMAGE_MAKER_REF is tested against, since its derivation has to agree with the
+  # chain it reads. op-node/v1.19.8 is the same commit as op-reth/v2.5.0.
+  OP_TAG: op-node/v1.19.8
+  PREIMAGE_MAKER_REF: 0.5.0-rc2
+  # Must match what optimism-devnet's kurtosis SDK expects (see its README).
+  KURTOSIS_VERSION: 1.18.1
+
 jobs:
   test:
     name: test
@@ -34,23 +45,26 @@ jobs:
         with:
           version: 'v1.0.0'
       - name: Install kurtosis
+        # The apt repo at apt.fury.io stops at 1.15.2, so install the release tarball
+        # instead. optimism-devnet's kurtosis SDK refuses to talk to an older engine.
         run: |
-          sudo apt-get install jq
-          echo "deb [trusted=yes] https://apt.fury.io/kurtosis-tech/ /" | sudo tee /etc/apt/sources.list.d/kurtosis.list
-          sudo apt update
-          sudo apt remove kurtosis-cli
-          sudo apt install kurtosis-cli=1.15.2 -V
+          sudo apt-get install -y jq
+          curl -fsSL -o /tmp/kurtosis.tar.gz \
+            "https://github.com/kurtosis-tech/kurtosis-cli-release-artifacts/releases/download/${KURTOSIS_VERSION}/kurtosis-cli_${KURTOSIS_VERSION}_linux_amd64.tar.gz"
+          sudo tar -C /usr/local/bin -xzf /tmp/kurtosis.tar.gz kurtosis
+          kurtosis version
       - name: Download optimism-devnet
         run: |
-          git clone -b v1.5.0 https://github.com/datachainlab/optimism-devnet
+          git clone -b ${DEVNET_REF} https://github.com/datachainlab/optimism-devnet
       - name: Download optimism-preimage-maker
         run: |
-          git clone -b v0.4.2 https://github.com/datachainlab/optimism-preimage-maker
+          git clone -b ${PREIMAGE_MAKER_REF} https://github.com/datachainlab/optimism-preimage-maker
       - name: Start optimism dev net
+        # The devnet pins the L1 clients itself; only the op-stack tag is chosen here.
         run: |
           cd optimism-devnet
-          OP_TAG=op-node/v1.19.5 make chain
-          GETH_VERSION=v1.17.3 LODESTAR_VERSION=v1.46.0 make devnet-up
+          make chain OP_TAG=${OP_TAG}
+          make devnet-up
       - name: Set port
         run: |
           cd optimism-preimage-maker
