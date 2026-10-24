@@ -7,14 +7,9 @@ on:
   pull_request:
 
 env:
-  # The devnet runs L1 on the official geth release.
   DEVNET_REF: v1.6.0-rc5
-  # The op-stack tag the devnet builds from. Must match what the preimage maker at
-  # PREIMAGE_MAKER_REF is tested against, since its derivation has to agree with the
-  # chain it reads. op-node/v1.19.8 is the same commit as op-reth/v2.5.0.
   OP_TAG: op-node/v1.19.8
-  PREIMAGE_MAKER_REF: 0.5.0-rc2
-  # Must match what optimism-devnet's kurtosis SDK expects (see its README).
+  PREIMAGE_MAKER_REF: v0.5.1
   KURTOSIS_VERSION: 1.18.1
 
 jobs:
@@ -33,7 +28,7 @@ jobs:
           docker system prune -a --volumes -f
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version: '1.27.3'
       - uses: extractions/setup-just@v2
         with:
           just-version: 1.40.0
