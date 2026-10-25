@@ -381,7 +381,6 @@ func (ts *ProverTestSuite) outputForELCL1VerificationTest(headers []core.Header)
 				println("cons_l1_current_sync_committee", common.Bytes2Hex(l1Headers[i-2].ConsensusUpdate.NextSyncCommittee.AggregatePubkey))
 			}
 			println("cons_l1_next_sync_committee", common.Bytes2Hex(l1Headers[i-1].ConsensusUpdate.NextSyncCommittee.AggregatePubkey))
-			println("cons_l1_timestamp", l1Headers[i-1].Timestamp)
 		}
 	}
 }
